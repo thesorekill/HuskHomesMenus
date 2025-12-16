@@ -1,0 +1,55 @@
+name: HuskHomesMenus
+version: 1.0.0
+main: net.chumbucket.huskhomesmenus.HuskHomesMenus
+api-version: "1.21"
+
+depend: [HuskHomes]
+softdepend: [PlaceholderAPI]
+
+commands:
+  tpa:
+    description: Send a teleport request to a player (custom HuskHomesMenus TPA)
+    usage: /tpa <player>
+    permission: huskhomesmenus.tpa
+  tpahere:
+    description: Ask a player to teleport to you (custom HuskHomesMenus TPAHere)
+    usage: /tpahere <player>
+    permission: huskhomesmenus.tpahere
+
+  tpaccept:
+    description: Accept the latest (or a specific) pending teleport request
+    usage: /tpaccept [player]
+    permission: huskhomesmenus.tpaccept
+  tpdeny:
+    description: Deny the latest (or a specific) pending teleport request
+    usage: /tpdeny [player]
+    permission: huskhomesmenus.tpdeny
+
+  tpatoggle:
+    description: Toggle receiving /tpa requests
+    usage: /tpatoggle
+    permission: huskhomesmenus.toggles
+  tpaheretoggle:
+    description: Toggle receiving /tpahere requests
+    usage: /tpaheretoggle
+    permission: huskhomesmenus.toggles
+
+permissions:
+  huskhomesmenus.toggles:
+    description: Allows toggling /tpa and /tpahere request reception
+    default: true
+
+  huskhomesmenus.tpa:
+    description: Allows sending /tpa requests
+    default: true
+  huskhomesmenus.tpahere:
+    description: Allows sending /tpahere requests
+    default: true
+
+  huskhomesmenus.tpaccept:
+    description: Allows accepting teleport requests
+    default: true
+  huskhomesmenus.tpdeny:
+    description: Allows denying teleport requests
+    default: true
+
