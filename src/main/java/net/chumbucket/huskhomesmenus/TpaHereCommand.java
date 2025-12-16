@@ -7,10 +7,13 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
-/**
- * Cross-server /tpahere wrapper. Delegates to HuskHomes' namespaced command.
- */
 public final class TpaHereCommand implements CommandExecutor {
+
+    private final ToggleManager toggles;
+
+    public TpaHereCommand(ToggleManager toggles) {
+        this.toggles = toggles;
+    }
 
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
@@ -30,9 +33,15 @@ public final class TpaHereCommand implements CommandExecutor {
             return true;
         }
 
+        Player target = Bukkit.getPlayerExact(targetName);
+        if (target != null && !toggles.isTpahereOn(target)) {
+            player.sendMessage(ChatColor.RED + "That player has TPAHere requests turned off.");
+            return true;
+        }
+
         boolean handled = Bukkit.dispatchCommand(player, "huskhomes:tpahere " + targetName);
         if (!handled) {
-            player.sendMessage(ChatColor.RED + "Failed to run HuskHomes /tpahere (huskhomes:tpahere).");
+            player.sendMessage(ChatColor.RED + "Failed to run HuskHomes /tpahere.");
         }
         return true;
     }

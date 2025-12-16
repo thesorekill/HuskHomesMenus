@@ -47,10 +47,10 @@ permissions:
       huskhomesmenus.tpdeny: true
 
   huskhomesmenus.tpatoggle:
-    description: Allows toggling /tpahere request reception
+    description: Allows toggling /tpa request reception
     default: true
   huskhomesmenus.tpaheretoggle:
-    description: Allows toggling /tpa request reception
+    description: Allows toggling /tpahere request reception
     default: true
 
   huskhomesmenus.tpa:

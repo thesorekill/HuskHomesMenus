@@ -8,18 +8,14 @@ import org.bukkit.plugin.messaging.PluginMessageListener;
 import java.io.*;
 import java.util.UUID;
 
-/**
- * Optional cross-server messenger using the legacy "BungeeCord" plugin messaging channel.
- *
- * - Single server: not required (we'll message locally).
- * - Multi-server behind Velocity/Bungee: enables sending a message back to the requester on their server.
- *
- * Note: Requires proxy support for the BungeeCord plugin messaging channel.
- */
 public final class OptionalProxyMessenger implements PluginMessageListener {
 
-    private static final String CHANNEL = "BungeeCord";
-    private static final String SUBCHANNEL = "HuskHomesMenus:Msg";
+    // Support both (different setups expect different channel IDs)
+    public static final String CHANNEL_MODERN = "bungeecord:main";
+    public static final String CHANNEL_LEGACY = "BungeeCord";
+
+    // Custom forward subchannel name
+    public static final String SUBCHANNEL = "HuskHomesMenus:Msg";
 
     private final JavaPlugin plugin;
     private boolean enabled = false;
@@ -29,14 +25,21 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
     }
 
     public void tryEnable() {
+        enabled = false;
+
         try {
-            plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, CHANNEL);
-            plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, CHANNEL, this);
+            // Register BOTH channels. No harm if one is unused.
+            plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, CHANNEL_MODERN);
+            plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, CHANNEL_MODERN, this);
+
+            plugin.getServer().getMessenger().registerOutgoingPluginChannel(plugin, CHANNEL_LEGACY);
+            plugin.getServer().getMessenger().registerIncomingPluginChannel(plugin, CHANNEL_LEGACY, this);
+
             enabled = true;
-            plugin.getLogger().info("Optional proxy messaging registered on channel " + CHANNEL);
+            plugin.getLogger().info("Optional proxy messaging enabled (channels=" + CHANNEL_MODERN + " & " + CHANNEL_LEGACY + ", sub=" + SUBCHANNEL + ")");
         } catch (Throwable t) {
             enabled = false;
-            plugin.getLogger().warning("Proxy messaging not available: " + t.getMessage());
+            plugin.getLogger().warning("Optional proxy messaging could not be enabled: " + t.getMessage());
         }
     }
 
@@ -45,48 +48,84 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
     }
 
     /**
-     * Forward a message to ALL servers; only the server that has the UUID online will deliver it.
+     * Ask the proxy to send a chat message to a player by NAME (works cross-server).
+     * Carrier must be online on THIS backend.
      *
-     * @param targetUuid player UUID to receive the message
-     * @param message chat message
-     * @param carrier an online player on THIS backend to carry the plugin message to the proxy
+     * NOTE: This uses the proxy "Message" subchannel.
      */
-    public void forwardTo(UUID targetUuid, String message, Player carrier) {
-        if (!enabled || carrier == null) return;
+    public boolean messagePlayer(String playerName, String message, Player carrier) {
+        if (!enabled || carrier == null || playerName == null || playerName.isBlank() || message == null) return false;
 
         try {
-            byte[] inner = packInner(targetUuid, message);
+            byte[] data = buildProxyMessagePacket(playerName, message);
 
-            ByteArrayOutputStream b = new ByteArrayOutputStream();
-            DataOutputStream out = new DataOutputStream(b);
-
-            out.writeUTF("Forward");
-            out.writeUTF("ALL");
-            out.writeUTF(SUBCHANNEL);
-            out.writeShort(inner.length);
-            out.write(inner);
-
-            carrier.sendPluginMessage(plugin, CHANNEL, b.toByteArray());
-        } catch (IOException ignored) {
+            // Send on both channels to be compatible with proxy expectations
+            carrier.sendPluginMessage(plugin, CHANNEL_MODERN, data);
+            carrier.sendPluginMessage(plugin, CHANNEL_LEGACY, data);
+            return true;
+        } catch (Throwable t) {
+            plugin.getLogger().warning("Failed to proxy-message '" + playerName + "': " + t.getMessage());
+            return false;
         }
     }
 
+    private byte[] buildProxyMessagePacket(String playerName, String message) throws IOException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        DataOutputStream out = new DataOutputStream(bytes);
+        out.writeUTF("Message");
+        out.writeUTF(playerName);
+        out.writeUTF(message);
+        return bytes.toByteArray();
+    }
+
+    /**
+     * Forward a custom payload to ALL servers; the server where targetUuid is online will deliver it.
+     * Carrier must be online on THIS backend.
+     *
+     * NOTE: This uses the proxy "Forward" subchannel.
+     */
+    public boolean forwardTo(UUID targetUuid, String message, Player carrier) {
+        if (!enabled || carrier == null || targetUuid == null || message == null) return false;
+
+        try {
+            byte[] innerPayload = packInner(targetUuid, message);
+            byte[] packet = buildForwardPacket(innerPayload);
+
+            // Send on both channels to be compatible with proxy expectations
+            carrier.sendPluginMessage(plugin, CHANNEL_MODERN, packet);
+            carrier.sendPluginMessage(plugin, CHANNEL_LEGACY, packet);
+            return true;
+        } catch (Throwable t) {
+            plugin.getLogger().warning("Failed to forward proxy message: " + t.getMessage());
+            return false;
+        }
+    }
+
+    private byte[] buildForwardPacket(byte[] innerPayload) throws IOException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        DataOutputStream out = new DataOutputStream(bytes);
+
+        out.writeUTF("Forward");
+        out.writeUTF("ALL");
+        out.writeUTF(SUBCHANNEL);
+        out.writeShort(innerPayload.length);
+        out.write(innerPayload);
+
+        return bytes.toByteArray();
+    }
+
     @Override
-    public void onPluginMessageReceived(String channel, Player player, byte[] bytes) {
-        if (!CHANNEL.equals(channel)) return;
+    public void onPluginMessageReceived(String channel, Player player, byte[] message) {
+        if (!enabled) return;
 
-        // Handle the common "Forward" format:
-        // Forward -> subchannel -> len -> payload
-        try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(bytes))) {
-            String header = in.readUTF();
-            if (!"Forward".equalsIgnoreCase(header)) {
-                return;
-            }
+        // Only accept from our known channels
+        if (!CHANNEL_MODERN.equalsIgnoreCase(channel) && !CHANNEL_LEGACY.equalsIgnoreCase(channel)) return;
 
+        try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(message))) {
+            // Forwarded messages arrive as:
+            // <SUBCHANNEL UTF> <LEN SHORT> <PAYLOAD BYTES>
             String sub = in.readUTF();
-            if (!SUBCHANNEL.equals(sub)) {
-                return;
-            }
+            if (!SUBCHANNEL.equals(sub)) return;
 
             int len = in.readUnsignedShort();
             byte[] payload = new byte[len];
@@ -107,18 +146,15 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
 
     private void unpackAndDeliver(byte[] payload) throws IOException {
         try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(payload))) {
-            UUID uuid;
-            try {
-                uuid = UUID.fromString(in.readUTF());
-            } catch (IllegalArgumentException e) {
-                return;
-            }
+            UUID uuid = UUID.fromString(in.readUTF());
             String chat = in.readUTF();
 
-            Player p = Bukkit.getPlayer(uuid);
-            if (p != null) {
-                p.sendMessage(chat);
+            Player target = Bukkit.getPlayer(uuid);
+            if (target != null) {
+                target.sendMessage(chat);
             }
+        } catch (IllegalArgumentException ignored) {
+            // bad UUID; ignore
         }
     }
 }

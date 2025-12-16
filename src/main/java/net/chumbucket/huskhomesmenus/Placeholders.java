@@ -30,21 +30,75 @@ public final class Placeholders extends PlaceholderExpansion {
         return plugin.getDescription().getVersion();
     }
 
+    /**
+     * Placeholders provided by this expansion:
+     *
+     * Pretty (colored):
+     *  - %huskhomesmenus_tpa_pretty%
+     *  - %huskhomesmenus_tpahere_pretty%
+     *  - %huskhomesmenus_requests_pretty%
+     *
+     * Raw booleans:
+     *  - %huskhomesmenus_tpa%
+     *  - %huskhomesmenus_tpahere%
+     *
+     * Plain text:
+     *  - %huskhomesmenus_tpa_text%
+     *  - %huskhomesmenus_tpahere_text%
+     *
+     * Icons:
+     *  - %huskhomesmenus_tpa_icon%
+     *  - %huskhomesmenus_tpahere_icon%
+     */
     @Override
     public String onPlaceholderRequest(Player player, String params) {
-        if (player == null || params == null) return null;
-
-        if (params.equalsIgnoreCase("tpa_pretty")) {
-            return pretty(toggles.isTpaOn(player));
-        }
-        if (params.equalsIgnoreCase("tpahere_pretty")) {
-            return pretty(toggles.isTpahereOn(player));
+        if (player == null || params == null) {
+            return null;
         }
 
-        return null;
+        final boolean tpa = toggles.isTpaOn(player);
+        final boolean tpahere = toggles.isTpahereOn(player);
+
+        switch (params.toLowerCase()) {
+            // Pretty (colored + bold)
+            case "tpa_pretty":
+                return pretty(tpa);
+            case "tpahere_pretty":
+                return pretty(tpahere);
+
+            // Raw booleans (useful for conditional formatting in some plugins)
+            case "tpa":
+                return String.valueOf(tpa);
+            case "tpahere":
+                return String.valueOf(tpahere);
+
+            // Plain text (no colors)
+            case "tpa_text":
+                return tpa ? "ON" : "OFF";
+            case "tpahere_text":
+                return tpahere ? "ON" : "OFF";
+
+            // Icons (scoreboard-friendly)
+            case "tpa_icon":
+                return tpa ? "✔" : "✘";
+            case "tpahere_icon":
+                return tpahere ? "✔" : "✘";
+
+            // Combined status
+            case "requests_pretty":
+                return color("&fTPA: " + (tpa ? "&a&lON" : "&c&lOFF")
+                        + " &7| &fTPAHERE: " + (tpahere ? "&a&lON" : "&c&lOFF"));
+
+            default:
+                return null;
+        }
     }
 
     private String pretty(boolean on) {
-        return ChatColor.translateAlternateColorCodes('&', on ? "&a&lON" : "&c&lOFF");
+        return color(on ? "&a&lON" : "&c&lOFF");
+    }
+
+    private String color(String s) {
+        return ChatColor.translateAlternateColorCodes('&', s);
     }
 }

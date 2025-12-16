@@ -7,11 +7,13 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
-/**
- * Cross-server /tpa wrapper. Delegates to HuskHomes' namespaced command.
- * Do NOT check Bukkit.getPlayer(...) here; it fails cross-server.
- */
 public final class TpaCommand implements CommandExecutor {
+
+    private final ToggleManager toggles;
+
+    public TpaCommand(ToggleManager toggles) {
+        this.toggles = toggles;
+    }
 
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
@@ -31,9 +33,16 @@ public final class TpaCommand implements CommandExecutor {
             return true;
         }
 
+        // If target is on this backend, enforce toggle immediately
+        Player target = Bukkit.getPlayerExact(targetName);
+        if (target != null && !toggles.isTpaOn(target)) {
+            player.sendMessage(ChatColor.RED + "That player has TPA requests turned off.");
+            return true;
+        }
+
         boolean handled = Bukkit.dispatchCommand(player, "huskhomes:tpa " + targetName);
         if (!handled) {
-            player.sendMessage(ChatColor.RED + "Failed to run HuskHomes /tpa (huskhomes:tpa).");
+            player.sendMessage(ChatColor.RED + "Failed to run HuskHomes /tpa.");
         }
         return true;
     }

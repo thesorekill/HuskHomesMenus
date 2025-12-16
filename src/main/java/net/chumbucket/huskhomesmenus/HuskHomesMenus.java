@@ -1,52 +1,53 @@
 package net.chumbucket.huskhomesmenus;
 
 import org.bukkit.Bukkit;
+import org.bukkit.command.PluginCommand;
 import org.bukkit.plugin.java.JavaPlugin;
 
-public class HuskHomesMenus extends JavaPlugin {
+public final class HuskHomesMenus extends JavaPlugin {
 
-    private HuskHomesHook huskHomes;
     private ToggleManager toggleManager;
-    private OptionalProxyMessenger proxyMessenger;
+    private OptionalProxyMessenger messenger;
 
     @Override
     public void onEnable() {
-        // Defensive: plugin.yml should depend on HuskHomes
-        this.huskHomes = new HuskHomesHook(this);
-        if (!huskHomes.isReady()) {
-            getLogger().severe("HuskHomes not found or API not ready. Disabling.");
-            getServer().getPluginManager().disablePlugin(this);
-            return;
-        }
-
         this.toggleManager = new ToggleManager(this);
 
-        // Optional proxy messenger (works single-server without it; enables cross-server messages when available)
-        this.proxyMessenger = new OptionalProxyMessenger(this);
-        this.proxyMessenger.tryEnable();
+        // Velocity / proxy messaging
+        this.messenger = new OptionalProxyMessenger(this);
+        this.messenger.tryEnable();
 
-        // Commands: delegate to HuskHomes namespaced commands so cross-server requests work
-        ToggleCommands togglesCmd = new ToggleCommands(toggleManager);
-        getCommand("tpatoggle").setExecutor(togglesCmd);
-        getCommand("tpaheretoggle").setExecutor(togglesCmd);
+        // Teleport request commands (wrappers around HuskHomes)
+        safeSetExecutor("tpa", new TpaCommand(toggleManager));
+        safeSetExecutor("tpahere", new TpaHereCommand(toggleManager));
+        safeSetExecutor("tpaccept", new TpAcceptCommand());
+        safeSetExecutor("tpdeny", new TpDenyCommand());
 
-        getCommand("tpa").setExecutor(new TpaCommand());
-        getCommand("tpahere").setExecutor(new TpaHereCommand());
-        getCommand("tpaccept").setExecutor(new TpAcceptCommand());
-        getCommand("tpdeny").setExecutor(new TpDenyCommand());
+        // Toggle commands
+        ToggleCommands toggleCommands = new ToggleCommands(toggleManager);
+        safeSetExecutor("tpatoggle", toggleCommands);
+        safeSetExecutor("tpaheretoggle", toggleCommands);
 
-        // Enforce per-type toggles on the RECEIVING server
+        // Listener (blocks on target backend; messages requester local or cross-backend)
         Bukkit.getPluginManager().registerEvents(
-                new TeleportRequestToggleListener(toggleManager, proxyMessenger),
+                new TeleportRequestToggleListener(toggleManager, messenger),
                 this
         );
 
-        // Optional PlaceholderAPI
-        if (getServer().getPluginManager().isPluginEnabled("PlaceholderAPI")) {
+        if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             new Placeholders(this, toggleManager).register();
-            getLogger().info("Registered PlaceholderAPI placeholders.");
+            getLogger().info("PlaceholderAPI detected; placeholders registered.");
         }
 
-        getLogger().info("HuskHomesMenus enabled (cross-server /tpa wrappers + per-type toggle enforcement).");
+        getLogger().info("HuskHomesMenus enabled. Proxy messenger enabled=" + messenger.isEnabled());
+    }
+
+    private void safeSetExecutor(String cmd, org.bukkit.command.CommandExecutor exec) {
+        PluginCommand pc = getCommand(cmd);
+        if (pc == null) {
+            getLogger().warning("Command '/" + cmd + "' not found in plugin.yml (executor not set).");
+            return;
+        }
+        pc.setExecutor(exec);
     }
 }
