@@ -8,12 +8,12 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 /**
- * Cross-server /tpahere wrapper that delegates to HuskHomes.
+ * Cross-server /tpahere wrapper. Delegates to HuskHomes' namespaced command.
  */
 public final class TpaHereCommand implements CommandExecutor {
 
     @Override
-    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+    public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(ChatColor.RED + "Players only.");
             return true;
@@ -24,19 +24,16 @@ public final class TpaHereCommand implements CommandExecutor {
             return true;
         }
 
-        final String targetName = args[0];
+        String targetName = args[0];
         if (targetName.equalsIgnoreCase(player.getName())) {
             player.sendMessage(ChatColor.RED + "You can't request yourself.");
             return true;
         }
 
         boolean handled = Bukkit.dispatchCommand(player, "huskhomes:tpahere " + targetName);
-
         if (!handled) {
             player.sendMessage(ChatColor.RED + "Failed to run HuskHomes /tpahere (huskhomes:tpahere).");
-            player.sendMessage(ChatColor.GRAY + "Check HuskHomes is installed + command isn't disabled.");
         }
-
         return true;
     }
 }

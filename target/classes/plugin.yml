@@ -8,11 +8,11 @@ softdepend: [PlaceholderAPI]
 
 commands:
   tpa:
-    description: Send a teleport request to a player (custom HuskHomesMenus TPA)
+    description: Send a teleport request to a player (HuskHomesMenus wrapper)
     usage: /tpa <player>
     permission: huskhomesmenus.tpa
   tpahere:
-    description: Ask a player to teleport to you (custom HuskHomesMenus TPAHere)
+    description: Ask a player to teleport to you (HuskHomesMenus wrapper)
     usage: /tpahere <player>
     permission: huskhomesmenus.tpahere
 
@@ -35,8 +35,22 @@ commands:
     permission: huskhomesmenus.toggles
 
 permissions:
-  huskhomesmenus.toggles:
-    description: Allows toggling /tpa and /tpahere request reception
+  huskhomesmenus.*:
+    description: Grants all HuskHomesMenus permissions
+    default: op
+    children:
+      huskhomesmenus.tpatoggle: true
+      huskhomesmenus.tpaheretoggle: true
+      huskhomesmenus.tpa: true
+      huskhomesmenus.tpahere: true
+      huskhomesmenus.tpaccept: true
+      huskhomesmenus.tpdeny: true
+
+  huskhomesmenus.tpatoggle:
+    description: Allows toggling /tpahere request reception
+    default: true
+  huskhomesmenus.tpaheretoggle:
+    description: Allows toggling /tpa request reception
     default: true
 
   huskhomesmenus.tpa:
@@ -52,4 +66,3 @@ permissions:
   huskhomesmenus.tpdeny:
     description: Allows denying teleport requests
     default: true
-

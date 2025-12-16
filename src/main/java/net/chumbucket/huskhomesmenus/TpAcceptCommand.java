@@ -8,13 +8,12 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 /**
- * Cross-server compatible /tpaccept wrapper.
- * Delegates to HuskHomes' namespaced command so HuskHomes can accept the request across servers.
+ * Cross-server /tpaccept wrapper. Delegates to HuskHomes.
  */
 public final class TpAcceptCommand implements CommandExecutor {
 
     @Override
-    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+    public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(ChatColor.RED + "Players only.");
             return true;
@@ -25,11 +24,14 @@ public final class TpAcceptCommand implements CommandExecutor {
             return true;
         }
 
-        final String cmd = (args.length == 1)
-                ? ("huskhomes:tpaccept " + args[0])
+        String command = (args.length == 1)
+                ? "huskhomes:tpaccept " + args[0]
                 : "huskhomes:tpaccept";
 
-        Bukkit.dispatchCommand(player, cmd);
+        boolean handled = Bukkit.dispatchCommand(player, command);
+        if (!handled) {
+            player.sendMessage(ChatColor.RED + "Failed to run HuskHomes /tpaccept (huskhomes:tpaccept).");
+        }
         return true;
     }
 }

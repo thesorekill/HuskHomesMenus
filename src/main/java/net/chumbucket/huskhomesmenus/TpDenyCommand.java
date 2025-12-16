@@ -8,13 +8,12 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 /**
- * Cross-server compatible /tpdeny wrapper.
- * Delegates to HuskHomes' namespaced command so HuskHomes can deny the request across servers.
+ * Cross-server /tpdeny wrapper. Delegates to HuskHomes.
  */
 public final class TpDenyCommand implements CommandExecutor {
 
     @Override
-    public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+    public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
         if (!(sender instanceof Player player)) {
             sender.sendMessage(ChatColor.RED + "Players only.");
             return true;
@@ -25,11 +24,14 @@ public final class TpDenyCommand implements CommandExecutor {
             return true;
         }
 
-        final String cmd = (args.length == 1)
-                ? ("huskhomes:tpdeny " + args[0])
+        String command = (args.length == 1)
+                ? "huskhomes:tpdeny " + args[0]
                 : "huskhomes:tpdeny";
 
-        Bukkit.dispatchCommand(player, cmd);
+        boolean handled = Bukkit.dispatchCommand(player, command);
+        if (!handled) {
+            player.sendMessage(ChatColor.RED + "Failed to run HuskHomes /tpdeny (huskhomes:tpdeny).");
+        }
         return true;
     }
 }

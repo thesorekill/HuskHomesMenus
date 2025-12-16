@@ -5,6 +5,7 @@ net\chumbucket\huskhomesmenus\TpaRequestManager$Request.class
 net\chumbucket\huskhomesmenus\HuskHomesMenus.class
 net\chumbucket\huskhomesmenus\HuskHomesHook.class
 net\chumbucket\huskhomesmenus\TpaRequestManager$RequestType.class
+net\chumbucket\huskhomesmenus\OptionalProxyMessenger.class
 net\chumbucket\huskhomesmenus\TeleportRequestToggleListener$ReqType.class
 net\chumbucket\huskhomesmenus\TeleportRequestToggleListener.class
 net\chumbucket\huskhomesmenus\TpDenyCommand.class
