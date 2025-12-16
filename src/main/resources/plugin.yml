@@ -28,11 +28,11 @@ commands:
   tpatoggle:
     description: Toggle receiving /tpa requests
     usage: /tpatoggle
-    permission: huskhomesmenus.toggles
+    permission: huskhomesmenus.tpatoggle
   tpaheretoggle:
     description: Toggle receiving /tpahere requests
     usage: /tpaheretoggle
-    permission: huskhomesmenus.toggles
+    permission: huskhomesmenus.tpaheretoggle
 
 permissions:
   huskhomesmenus.*:
