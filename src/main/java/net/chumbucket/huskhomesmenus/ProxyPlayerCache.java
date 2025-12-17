@@ -4,6 +4,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class ProxyPlayerCache {
@@ -12,7 +13,9 @@ public final class ProxyPlayerCache {
     private final HHMConfig config;
     private final OptionalProxyMessenger messenger;
 
-    private volatile List<String> cached = List.of();
+    private volatile List<String> cached = List.of(); // <- what ProxyTabCompleter expects
+    private final Map<String, String> playerToServer = new ConcurrentHashMap<>();
+
     private volatile long lastRefreshMs = 0L;
     private volatile long negativeUntilMs = 0L;
     private final AtomicBoolean refreshInFlight = new AtomicBoolean(false);
@@ -27,16 +30,21 @@ public final class ProxyPlayerCache {
         int seconds = Math.max(5, plugin.getConfig().getInt("cache.refresh_interval_seconds", 30));
         long periodTicks = seconds * 20L;
 
-        // periodic refresh
         Bukkit.getScheduler().runTaskTimer(plugin, this::refreshAsyncish, 20L, periodTicks);
-        // quick initial attempt
         Bukkit.getScheduler().runTaskLater(plugin, this::refreshAsyncish, 20L);
     }
 
+    // ✅ Keeps ProxyTabCompleter compatible
     public List<String> getCached() {
-        // If stale, kick a refresh (non-blocking)
         if (isStale()) refreshAsyncish();
         return cached;
+    }
+
+    // REGION lookup
+    public String getServerFor(String playerName) {
+        if (playerName == null) return null;
+        if (isStale()) refreshAsyncish();
+        return playerToServer.get(playerName);
     }
 
     private boolean isStale() {
@@ -55,18 +63,50 @@ public final class ProxyPlayerCache {
 
         if (!refreshInFlight.compareAndSet(false, true)) return;
 
-        boolean sent = messenger.requestProxyPlayerList(names -> {
+        boolean sent = messenger.requestProxyServers(servers -> {
             try {
-                // Filter empties + de-dupe while keeping order
-                LinkedHashSet<String> set = new LinkedHashSet<>();
-                for (String n : names) {
-                    if (n == null) continue;
-                    String s = n.trim();
-                    if (!s.isEmpty()) set.add(s);
+                if (servers == null || servers.isEmpty()) {
+                    cached = List.of();
+                    playerToServer.clear();
+                    lastRefreshMs = System.currentTimeMillis();
+                    return;
                 }
-                cached = new ArrayList<>(set);
-                lastRefreshMs = System.currentTimeMillis();
-            } finally {
+
+                LinkedHashSet<String> allPlayers = new LinkedHashSet<>();
+                HashMap<String, String> map = new HashMap<>();
+
+                Iterator<String> it = servers.iterator();
+
+                Runnable next = new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!it.hasNext()) {
+                            cached = new ArrayList<>(allPlayers);
+                            playerToServer.clear();
+                            playerToServer.putAll(map);
+                            lastRefreshMs = System.currentTimeMillis();
+                            refreshInFlight.set(false);
+                            return;
+                        }
+
+                        String server = it.next();
+                        messenger.requestPlayerListForServer(server, (srv, names) -> {
+                            if (names != null) {
+                                for (String n : names) {
+                                    if (n == null) continue;
+                                    String name = n.trim();
+                                    if (name.isEmpty()) continue;
+                                    allPlayers.add(name);
+                                    map.put(name, srv);
+                                }
+                            }
+                            Bukkit.getScheduler().runTask(plugin, this);
+                        });
+                    }
+                };
+
+                Bukkit.getScheduler().runTask(plugin, next);
+            } catch (Throwable t) {
                 refreshInFlight.set(false);
             }
         });

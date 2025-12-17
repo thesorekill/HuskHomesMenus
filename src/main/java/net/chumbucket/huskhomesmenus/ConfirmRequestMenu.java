@@ -8,6 +8,7 @@ import org.bukkit.event.inventory.*;
 import org.bukkit.inventory.*;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
+import org.bukkit.scheduler.BukkitRunnable;
 
 import java.util.*;
 
@@ -17,10 +18,12 @@ public final class ConfirmRequestMenu implements Listener {
 
     private final HuskHomesMenus plugin;
     private final HHMConfig config;
+    private final ProxyPlayerCache playerCache;
 
-    public ConfirmRequestMenu(HuskHomesMenus plugin, HHMConfig config) {
+    public ConfirmRequestMenu(HuskHomesMenus plugin, HHMConfig config, ProxyPlayerCache playerCache) {
         this.plugin = plugin;
         this.config = config;
+        this.playerCache = playerCache;
     }
 
     public void open(Player target, String senderName, RequestType type) {
@@ -36,30 +39,38 @@ public final class ConfirmRequestMenu implements Listener {
         ConfirmHolder holder = new ConfirmHolder(senderName, type);
         Inventory inv = Bukkit.createInventory(holder, rows * 9, title);
 
+        String region = resolveRegion(senderName);
+        String dimension = resolveDimension(senderName);
+
         // filler
         boolean useFiller = menu.getBoolean("use_filler", false);
         if (useFiller) {
             ConfigurationSection fill = menu.getConfigurationSection("filler");
             ItemStack filler = buildSimpleItem(fill,
                     Material.GRAY_STAINED_GLASS_PANE, " ", List.of(), false, 0,
-                    Map.of("%sender%", safe(senderName), "%dimension_name%", "Unknown", "%region%", "Unknown"));
+                    Map.of("%sender%", safe(senderName), "%dimension_name%", safe(dimension), "%region%", safe(region)));
             for (int i = 0; i < inv.getSize(); i++) inv.setItem(i, filler);
         }
 
         // items
+        List<Integer> regionSlots = new ArrayList<>();
         List<Map<?, ?>> items = menu.getMapList("items");
         for (Map<?, ?> itemMap : items) {
             int slot = mapGetInt(itemMap, "slot", -1);
             if (slot < 0 || slot >= inv.getSize()) continue;
 
             String itemType = mapGetString(itemMap, "type", "ITEM");
+            // Track any slots that use %region% so we can refresh them once the proxy cache warms up
+            if (containsRegionPlaceholder(itemMap)) {
+                regionSlots.add(slot);
+            }
             boolean requiresProxy = mapGetBool(itemMap, "requires_proxy", false);
             if (requiresProxy && !config.proxyEnabled()) continue;
 
             ItemStack built = switch (itemType.toUpperCase(Locale.ROOT)) {
-                case "PLAYER_HEAD" -> buildPlayerHead(itemMap, target, senderName); // ✅ supports head_of
-                case "DIMENSION_ITEM" -> buildDimensionItem(itemMap, senderName);
-                default -> buildGenericItem(itemMap, senderName);
+                case "PLAYER_HEAD" -> buildPlayerHead(itemMap, target, senderName, dimension, region);
+                case "DIMENSION_ITEM" -> buildDimensionItem(itemMap, senderName, dimension, region);
+                default -> buildGenericItem(itemMap, senderName, dimension, region);
             };
 
             inv.setItem(slot, built);
@@ -72,7 +83,7 @@ public final class ConfirmRequestMenu implements Listener {
             ItemStack item = buildSimpleItem(deny.getConfigurationSection("item"),
                     Material.RED_STAINED_GLASS_PANE, "&c&lCANCEL",
                     List.of("&7Click to cancel the teleport"), false, 0,
-                    Map.of("%sender%", safe(senderName), "%dimension_name%", "Unknown", "%region%", "Unknown"));
+                    Map.of("%sender%", safe(senderName), "%dimension_name%", safe(dimension), "%region%", safe(region)));
             if (slot >= 0 && slot < inv.getSize()) inv.setItem(slot, item);
         }
 
@@ -83,11 +94,100 @@ public final class ConfirmRequestMenu implements Listener {
             ItemStack item = buildSimpleItem(accept.getConfigurationSection("item"),
                     Material.LIME_STAINED_GLASS_PANE, "&a&lCONFIRM",
                     List.of("&7Click to accept %sender%'s request"), false, 0,
-                    Map.of("%sender%", safe(senderName), "%dimension_name%", "Unknown", "%region%", "Unknown"));
+                    Map.of("%sender%", safe(senderName), "%dimension_name%", safe(dimension), "%region%", safe(region)));
             if (slot >= 0 && slot < inv.getSize()) inv.setItem(slot, item);
         }
 
         target.openInventory(inv);
+
+        // If we don't yet know what backend the sender is on, refresh the region line once the proxy cache responds
+        if (config.proxyEnabled() && playerCache != null && !regionSlots.isEmpty() && "Loading...".equalsIgnoreCase(region)) {
+            scheduleRegionRefresh(target, inv, senderName, regionSlots);
+        }
+    }
+
+
+    private boolean containsRegionPlaceholder(Map<?, ?> itemMap) {
+        String name = mapGetString(itemMap, "name", "");
+        if (name != null && name.contains("%region%")) return true;
+
+        Object loreObj = itemMap.get("lore");
+        if (loreObj instanceof List<?> loreList) {
+            for (Object o : loreList) {
+                if (o == null) continue;
+                if (o.toString().contains("%region%")) return true;
+            }
+        }
+        return false;
+    }
+
+    private void scheduleRegionRefresh(Player viewer, Inventory inv, String senderName, List<Integer> regionSlots) {
+        // Poll a few times to give the proxy response time to arrive; then fall back to "Offline"
+        new BukkitRunnable() {
+            int tries = 0;
+
+            @Override
+            public void run() {
+                tries++;
+
+                if (viewer == null || !viewer.isOnline()) {
+                    cancel();
+                    return;
+                }
+                // Stop if they closed / switched inventories
+                if (viewer.getOpenInventory() == null || viewer.getOpenInventory().getTopInventory() != inv) {
+                    cancel();
+                    return;
+                }
+
+                String srv = playerCache.getServerFor(senderName);
+                if (srv != null && !srv.isBlank()) {
+                    updateRegionSlots(inv, regionSlots, srv.trim());
+                    cancel();
+                    return;
+                }
+
+                // After ~4 seconds (40 * 2 ticks per run at 10 ticks period), stop showing Loading...
+                if (tries >= 20) { // 20 * 10 ticks = 200 ticks = 10s? Wait: 10 ticks = 0.5s. 20 => 10s.
+                    updateRegionSlots(inv, regionSlots, "Offline");
+                    cancel();
+                }
+            }
+        }.runTaskTimer(plugin, 10L, 10L);
+    }
+
+    private void updateRegionSlots(Inventory inv, List<Integer> slots, String regionValue) {
+        for (Integer slot : slots) {
+            if (slot == null) continue;
+            if (slot < 0 || slot >= inv.getSize()) continue;
+
+            ItemStack item = inv.getItem(slot);
+            if (item == null) continue;
+
+            ItemMeta meta = item.getItemMeta();
+            if (meta == null) continue;
+
+            // Replace the previous placeholder replacement (typically "Loading...") in name/lore
+            if (meta.hasDisplayName()) {
+                meta.setDisplayName(meta.getDisplayName().replace("Loading...", regionValue));
+            }
+            List<String> lore = meta.getLore();
+            if (lore != null && !lore.isEmpty()) {
+                List<String> newLore = new ArrayList<>(lore.size());
+                for (String line : lore) {
+                    if (line == null) {
+                        newLore.add(null);
+                    } else {
+                        // Also support older values if you change the fallback later
+                        newLore.add(line.replace("Loading...", regionValue).replace("%region%", regionValue));
+                    }
+                }
+                meta.setLore(newLore);
+            }
+
+            item.setItemMeta(meta);
+            inv.setItem(slot, item);
+        }
     }
 
     // ---------------------------
@@ -98,10 +198,8 @@ public final class ConfirmRequestMenu implements Listener {
         if (!(e.getWhoClicked() instanceof Player p)) return;
         if (!(e.getView().getTopInventory().getHolder() instanceof ConfirmHolder holder)) return;
 
-        // Stop ALL movement/taking items
         e.setCancelled(true);
 
-        // Only respond to clicks in TOP inventory
         if (e.getClickedInventory() == null || e.getClickedInventory() != e.getView().getTopInventory()) return;
 
         ConfigurationSection menu = config.section("menus.confirm_request");
@@ -153,36 +251,24 @@ public final class ConfirmRequestMenu implements Listener {
         }
 
         boolean close = (click == null) || click.getBoolean("close_menu", true);
-
-        // Close immediately (client-side)
         if (close) p.closeInventory();
 
         final String sender = holder.senderName;
         final RequestType type = holder.type;
 
-        // IMPORTANT: allow the next huskhomes accept/deny command through interception
         PendingRequests.bypassForMs(p.getUniqueId(), 1200);
 
-        // Run 1 tick later so close always sticks + command executes cleanly
         Bukkit.getScheduler().runTaskLater(plugin, () -> {
-            if (doAccept) {
-                runAccept(p, sender, type);
-            } else {
-                runDeny(p, sender, type);
-            }
+            if (doAccept) runAccept(p, sender, type);
+            else runDeny(p, sender, type);
 
-            // Clear pending request memory, but DO NOT clear bypass here.
-            // Let bypass expire naturally to prevent re-open loops.
             PendingRequests.clear(p.getUniqueId());
-
-            // Belt + suspenders: close again after running
             if (close) p.closeInventory();
         }, 1L);
     }
 
     // ---------------------------
-    // ✅ Command execution (ONLY commands you said exist)
-    // Prefer tpaccept/tpdecline/tpdeny first; check tpyes/tpno last.
+    // Commands (only ones you said exist)
     // ---------------------------
     private boolean dispatchFirstSuccessful(Player p, String... cmdsNoSlash) {
         for (String cmd : cmdsNoSlash) {
@@ -201,70 +287,62 @@ public final class ConfirmRequestMenu implements Listener {
                 p,
                 hasSender ? "huskhomes:tpaccept " + sender : "huskhomes:tpaccept",
                 "huskhomes:tpaccept",
-                // check last
-                "huskhomes:tpyes"
+                "huskhomes:tpyes" // last
         );
 
-        if (!ok) {
-            p.sendMessage(config.prefix() + ChatColor.RED + "Could not accept the request.");
-        }
+        if (!ok) p.sendMessage(config.prefix() + ChatColor.RED + "Could not accept the request.");
     }
 
     private void runDeny(Player p, String sender, RequestType type) {
         boolean hasSender = sender != null && !sender.isBlank();
 
-        // Prefer decline, then deny; check tpno last
         boolean ok = dispatchFirstSuccessful(
                 p,
                 hasSender ? "huskhomes:tpdecline " + sender : "huskhomes:tpdecline",
                 hasSender ? "huskhomes:tpdeny " + sender : "huskhomes:tpdeny",
                 "huskhomes:tpdecline",
                 "huskhomes:tpdeny",
-                // check last
-                "huskhomes:tpno"
+                "huskhomes:tpno" // last
         );
 
-        if (!ok) {
-            p.sendMessage(config.prefix() + ChatColor.RED + "Could not decline the request.");
-        }
+        if (!ok) p.sendMessage(config.prefix() + ChatColor.RED + "Could not decline the request.");
     }
 
     // ---------------------------
     // Item builders
     // ---------------------------
-    private ItemStack buildPlayerHead(Map<?, ?> itemMap, Player viewer, String senderName) {
+    private ItemStack buildPlayerHead(Map<?, ?> itemMap, Player viewer, String senderName, String dimension, String region) {
         String name = config.color(mapGetString(itemMap, "name", "&a&lPLAYER"));
         List<String> lore = mapGetStringList(itemMap, "lore");
 
-        // head_of can be: SENDER, VIEWER, NAME
         String headOf = mapGetString(itemMap, "head_of", "SENDER").toUpperCase(Locale.ROOT);
 
         String ownerName;
         switch (headOf) {
             case "VIEWER" -> ownerName = (viewer != null ? viewer.getName() : null);
-            case "NAME" -> ownerName = mapGetString(itemMap, "head_name", senderName); // optional extra field
+            case "NAME" -> ownerName = mapGetString(itemMap, "head_name", senderName);
             case "SENDER" -> ownerName = senderName;
-            default -> ownerName = senderName; // safe default
+            default -> ownerName = senderName;
         }
 
         ItemStack skull = new ItemStack(Material.PLAYER_HEAD);
         ItemMeta meta0 = skull.getItemMeta();
         if (meta0 instanceof SkullMeta meta) {
             if (ownerName != null && !ownerName.isBlank()) {
-                Player ownerPlayer = Bukkit.getPlayerExact(ownerName);
-                if (ownerPlayer != null) meta.setOwningPlayer(ownerPlayer);
+                Player owner = Bukkit.getPlayerExact(ownerName);
+                if (owner != null) meta.setOwningPlayer(owner);
             }
 
-            // placeholders still based on sender context (existing behavior)
-            Player sender = (senderName != null) ? Bukkit.getPlayerExact(senderName) : null;
-            meta.setDisplayName(apply(name, senderName, dimensionOf(sender), regionOf(sender)));
-            meta.setLore(colorLore(applyAll(lore, senderName, dimensionOf(sender), regionOf(sender))));
+            meta.setDisplayName(apply(name, senderName, dimension, region));
+            meta.setLore(colorLore(applyAll(lore, senderName, dimension, region)));
             skull.setItemMeta(meta);
         }
         return skull;
     }
 
-    private ItemStack buildDimensionItem(Map<?, ?> itemMap, String senderName) {
+    private ItemStack buildDimensionItem(Map<?, ?> itemMap, String senderName, String dimension, String region) {
+        // For remote senders, dimension is not knowable without sender-side messaging.
+        // We still show the lore text correctly and pick a sensible icon if local; otherwise default overworld icon.
         Player sender = (senderName != null) ? Bukkit.getPlayerExact(senderName) : null;
 
         String overworldMat = mapGetString(itemMap, "overworld_material", "GRASS_BLOCK");
@@ -287,16 +365,14 @@ public final class ConfirmRequestMenu implements Listener {
         ItemStack it = new ItemStack(mat);
         ItemMeta meta = it.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(apply(name, senderName, dimensionOf(sender), regionOf(sender)));
-            meta.setLore(colorLore(applyAll(lore, senderName, dimensionOf(sender), regionOf(sender))));
+            meta.setDisplayName(apply(name, senderName, dimension, region));
+            meta.setLore(colorLore(applyAll(lore, senderName, dimension, region)));
             it.setItemMeta(meta);
         }
         return it;
     }
 
-    private ItemStack buildGenericItem(Map<?, ?> itemMap, String senderName) {
-        Player sender = (senderName != null) ? Bukkit.getPlayerExact(senderName) : null;
-
+    private ItemStack buildGenericItem(Map<?, ?> itemMap, String senderName, String dimension, String region) {
         Material mat = materialOr(Material.PAPER, mapGetString(itemMap, "material", "PAPER"));
         String name = config.color(mapGetString(itemMap, "name", "&a&lINFO"));
         List<String> lore = mapGetStringList(itemMap, "lore");
@@ -304,8 +380,8 @@ public final class ConfirmRequestMenu implements Listener {
         ItemStack it = new ItemStack(mat);
         ItemMeta meta = it.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(apply(name, senderName, dimensionOf(sender), regionOf(sender)));
-            meta.setLore(colorLore(applyAll(lore, senderName, dimensionOf(sender), regionOf(sender))));
+            meta.setDisplayName(apply(name, senderName, dimension, region));
+            meta.setLore(colorLore(applyAll(lore, senderName, dimension, region)));
             it.setItemMeta(meta);
         }
         return it;
@@ -318,7 +394,6 @@ public final class ConfirmRequestMenu implements Listener {
                                       boolean fallbackGlow,
                                       int fallbackCmd,
                                       Map<String, String> repl) {
-
         if (sec == null) {
             return simple(fallbackMat, fallbackName, fallbackLore, fallbackGlow, fallbackCmd, repl);
         }
@@ -355,6 +430,39 @@ public final class ConfirmRequestMenu implements Listener {
     }
 
     // ---------------------------
+    // Region + dimension resolution
+    // ---------------------------
+    private String resolveRegion(String senderName) {
+        // If proxy not enabled, we can only say Local/Unknown. But you asked not to show Unknown for region.
+        if (!config.proxyEnabled()) return "Local";
+
+        // If sender is on this backend, show Local (or you can change to your server name if you want)
+        Player sender = (senderName != null) ? Bukkit.getPlayerExact(senderName) : null;
+        if (sender != null) return "Local";
+
+        // Otherwise, use proxy cache mapping: player -> server
+        String srv = (playerCache != null) ? playerCache.getServerFor(senderName) : null;
+
+        // Never "Unknown" per your request:
+        // - if cache not warmed up yet, show Loading...
+        // - if truly not found, show Offline
+        if (srv != null && !srv.isBlank()) return srv;
+        return "Loading...";
+    }
+
+    private String resolveDimension(String senderName) {
+        Player sender = (senderName != null) ? Bukkit.getPlayerExact(senderName) : null;
+        if (sender == null) return "Unknown"; // proxy cannot know remote dimension
+
+        World.Environment env = sender.getWorld().getEnvironment();
+        return switch (env) {
+            case NETHER -> "Nether";
+            case THE_END -> "The End";
+            default -> "Overworld";
+        };
+    }
+
+    // ---------------------------
     // Placeholder helpers
     // ---------------------------
     private String apply(String s, String sender, String dimension, String region) {
@@ -376,21 +484,6 @@ public final class ConfirmRequestMenu implements Listener {
         return out;
     }
 
-    private String dimensionOf(Player sender) {
-        if (sender == null) return "Unknown";
-        World.Environment env = sender.getWorld().getEnvironment();
-        return switch (env) {
-            case NETHER -> "Nether";
-            case THE_END -> "The End";
-            default -> "Overworld";
-        };
-    }
-
-    private String regionOf(Player sender) {
-        if (sender == null) return (config.proxyEnabled() ? "Remote" : "Unknown");
-        return "Local";
-    }
-
     private String safe(String s) {
         return (s == null) ? "Unknown" : s;
     }
@@ -407,9 +500,7 @@ public final class ConfirmRequestMenu implements Listener {
     private static Object mapGet(Map<?, ?> map, String key) {
         if (map == null) return null;
         for (Map.Entry<?, ?> e : map.entrySet()) {
-            if (key.equals(String.valueOf(e.getKey()))) {
-                return e.getValue();
-            }
+            if (key.equals(String.valueOf(e.getKey()))) return e.getValue();
         }
         return null;
     }

@@ -17,20 +17,20 @@ public final class HuskHomesMenus extends JavaPlugin {
         this.config = new HHMConfig(this);
         this.toggleManager = new ToggleManager(this);
 
-        // Velocity / proxy messaging (config-driven)
+        // Proxy messaging
         this.messenger = new OptionalProxyMessenger(this, config);
         this.messenger.tryEnable();
 
-        // Proxy player cache (for tab completion)
+        // Proxy cache (tab completion + REGION mapping)
         ProxyPlayerCache playerCache = new ProxyPlayerCache(this, config, messenger);
         playerCache.start();
 
         // Menu
-        ConfirmRequestMenu confirmMenu = new ConfirmRequestMenu(this, config);
-        Bukkit.getPluginManager().registerEvents(confirmMenu, this);
+        ConfirmRequestMenu confirmMenu = new ConfirmRequestMenu(this, config, playerCache);
+        Bukkit.getPluginManager().registerEvents(confirmMenu, this); // register menu click/drag listener
         Bukkit.getPluginManager().registerEvents(new TeleportCommandInterceptListener(confirmMenu, config), this);
 
-        // Teleport request commands (wrappers around HuskHomes)
+        // Commands
         safeSetExecutor("tpa", new TpaCommand(toggleManager, config));
         safeSetExecutor("tpahere", new TpaHereCommand(toggleManager, config));
         safeSetExecutor("tpaccept", new TpAcceptCommand(confirmMenu));
@@ -47,7 +47,7 @@ public final class HuskHomesMenus extends JavaPlugin {
         safeSetExecutor("tpatoggle", toggleCommands);
         safeSetExecutor("tpaheretoggle", toggleCommands);
 
-        // Listener (blocks on target backend; messages requester local or cross-backend)
+        // Toggle enforcement (and cross-server denial messaging)
         Bukkit.getPluginManager().registerEvents(
                 new TeleportRequestToggleListener(toggleManager, messenger, config),
                 this
