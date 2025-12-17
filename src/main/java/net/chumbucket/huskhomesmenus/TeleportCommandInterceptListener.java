@@ -1,6 +1,7 @@
 package net.chumbucket.huskhomesmenus;
 
 import org.bukkit.ChatColor;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -10,9 +11,11 @@ import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 public final class TeleportCommandInterceptListener implements Listener {
 
     private final ConfirmRequestMenu menu;
+    private final HHMConfig config;
 
-    public TeleportCommandInterceptListener(ConfirmRequestMenu menu) {
+    public TeleportCommandInterceptListener(ConfirmRequestMenu menu, HHMConfig config) {
         this.menu = menu;
+        this.config = config;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
@@ -21,6 +24,9 @@ public final class TeleportCommandInterceptListener implements Listener {
 
         // If the GUI just triggered a real HuskHomes command, let it through (prevents loop)
         if (PendingRequests.isBypassActive(p.getUniqueId())) return;
+
+        // If the confirm menu is disabled, DO NOT intercept; let HuskHomes handle commands normally
+        if (!isConfirmMenuEnabled()) return;
 
         String msg = e.getMessage();
         if (msg == null) return;
@@ -48,14 +54,14 @@ public final class TeleportCommandInterceptListener implements Listener {
             argIndex = 2;
         }
 
-        boolean isAccept = action.equals("tpaccept") || action.startsWith("tpaccept");
-        boolean isDeny =
-                action.equals("tpdeny")
-                        || action.equals("tpdecline")
-                        || action.equals("tpdenyrequest")
-                        || action.equals("tpdeclinerequest")
-                        || action.startsWith("tpdeny")
-                        || action.startsWith("tpdecline");
+        boolean isAccept = action.equals("tpaccept");
+        boolean isDeny = action.equals("tpdeny") || action.equals("tpdecline");
+
+        // also allow namespaced variants that some setups pass through as full strings
+        if (!isAccept && !isDeny) {
+            if (action.startsWith("tpaccept")) isAccept = true;
+            if (action.startsWith("tpdeny") || action.startsWith("tpdecline")) isDeny = true;
+        }
 
         if (!isAccept && !isDeny) return;
 
@@ -83,5 +89,12 @@ public final class TeleportCommandInterceptListener implements Listener {
         }
 
         menu.open(p, requesterName, type);
+    }
+
+    private boolean isConfirmMenuEnabled() {
+        // uses config path menus.confirm_request.enabled (default true if missing)
+        ConfigurationSection sec = config.section("menus.confirm_request");
+        if (sec == null) return true;
+        return sec.getBoolean("enabled", true);
     }
 }

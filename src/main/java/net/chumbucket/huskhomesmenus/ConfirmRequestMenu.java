@@ -57,7 +57,7 @@ public final class ConfirmRequestMenu implements Listener {
             if (requiresProxy && !config.proxyEnabled()) continue;
 
             ItemStack built = switch (itemType.toUpperCase(Locale.ROOT)) {
-                case "PLAYER_HEAD" -> buildSenderHead(itemMap, senderName);
+                case "PLAYER_HEAD" -> buildPlayerHead(itemMap, target, senderName); // ✅ supports head_of
                 case "DIMENSION_ITEM" -> buildDimensionItem(itemMap, senderName);
                 default -> buildGenericItem(itemMap, senderName);
             };
@@ -171,6 +171,8 @@ public final class ConfirmRequestMenu implements Listener {
                 runDeny(p, sender, type);
             }
 
+            // Clear pending request memory, but DO NOT clear bypass here.
+            // Let bypass expire naturally to prevent re-open loops.
             PendingRequests.clear(p.getUniqueId());
 
             // Belt + suspenders: close again after running
@@ -230,15 +232,31 @@ public final class ConfirmRequestMenu implements Listener {
     // ---------------------------
     // Item builders
     // ---------------------------
-    private ItemStack buildSenderHead(Map<?, ?> itemMap, String senderName) {
+    private ItemStack buildPlayerHead(Map<?, ?> itemMap, Player viewer, String senderName) {
         String name = config.color(mapGetString(itemMap, "name", "&a&lPLAYER"));
         List<String> lore = mapGetStringList(itemMap, "lore");
+
+        // head_of can be: SENDER, VIEWER, NAME
+        String headOf = mapGetString(itemMap, "head_of", "SENDER").toUpperCase(Locale.ROOT);
+
+        String ownerName;
+        switch (headOf) {
+            case "VIEWER" -> ownerName = (viewer != null ? viewer.getName() : null);
+            case "NAME" -> ownerName = mapGetString(itemMap, "head_name", senderName); // optional extra field
+            case "SENDER" -> ownerName = senderName;
+            default -> ownerName = senderName; // safe default
+        }
 
         ItemStack skull = new ItemStack(Material.PLAYER_HEAD);
         ItemMeta meta0 = skull.getItemMeta();
         if (meta0 instanceof SkullMeta meta) {
+            if (ownerName != null && !ownerName.isBlank()) {
+                Player ownerPlayer = Bukkit.getPlayerExact(ownerName);
+                if (ownerPlayer != null) meta.setOwningPlayer(ownerPlayer);
+            }
+
+            // placeholders still based on sender context (existing behavior)
             Player sender = (senderName != null) ? Bukkit.getPlayerExact(senderName) : null;
-            if (sender != null) meta.setOwningPlayer(sender);
             meta.setDisplayName(apply(name, senderName, dimensionOf(sender), regionOf(sender)));
             meta.setLore(colorLore(applyAll(lore, senderName, dimensionOf(sender), regionOf(sender))));
             skull.setItemMeta(meta);

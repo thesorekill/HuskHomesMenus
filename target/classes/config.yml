@@ -6,8 +6,45 @@
 # ┣╸ Purpose: GUI + toggles + proxy-safe messaging for HuskHomes TPA/TPAHERE
 # ┗╸ Notes: Designed for proxy networks (Velocity/Bungee/Waterfall)
 
-# Locale of the default language file to use (reserved for future language packs)
-language: en-us
+# ┌──────────────────────────────────────────────────────────────┐
+# │  PERMISSIONS                                                 │
+# └──────────────────────────────────────────────────────────────┘
+# Command permissions
+#   huskhomesmenus.tpa         -> /tpa 
+#   huskhomesmenus.tpahere     -> /tpahere 
+#   huskhomesmenus.tpaccept    -> /tpaccept 
+#   huskhomesmenus.tpdeny      -> /tpdeny 
+#   huskhomesmenus.tpatoggle   -> /tpatoggle 
+#   huskhomesmenus.tpaheretoggle -> /tpaheretoggle 
+
+# ┌──────────────────────────────────────────────────────────────┐
+# │  PLACEHOLDERS (If you have PlaceholderAPI Installed)         │
+# └──────────────────────────────────────────────────────────────┘
+# This plugin registers a PlaceholderAPI expansion with identifier:
+#   %huskhomesmenus_<placeholder>%
+#
+# Supported placeholders:
+#
+# 1) Raw booleans (returns "true" / "false")
+#   %huskhomesmenus_tpa%           -> true/false 
+#   %huskhomesmenus_tpahere%       -> true/false
+#
+# 2) Text (returns "ON" / "OFF")
+#   %huskhomesmenus_tpa_text%      -> ON/OFF
+#   %huskhomesmenus_tpahere_text%  -> ON/OFF
+#
+# 3) Icons (returns "✔" / "✘")
+#   %huskhomesmenus_tpa_icon%      -> ✔/✘
+#   %huskhomesmenus_tpahere_icon%  -> ✔/✘
+#
+# 4) Pretty (colored & bold; returns "&a&lON" or "&c&lOFF" after colorization)
+#   %huskhomesmenus_tpa_pretty%      
+#   %huskhomesmenus_tpahere_pretty% 
+#
+# 5) Combined status line (colored)
+#   %huskhomesmenus_requests_pretty%
+#     -> "TPA: ON/OFF | TPAHERE: ON/OFF" (with colors)
+#
 
 # Whether to log extra debugging info (recommended OFF unless testing)
 debug: false
@@ -67,15 +104,6 @@ messages:
       enabled: true
       text: "%color%TPAHere requests: %state%"
 
-    # Optional single-line confirmation messages.
-    # Turn these ON if you want an extra "enabled/disabled" message in addition to the status lines.
-    toggled_on:
-      enabled: false
-      text: "&aTeleport requests enabled."
-    toggled_off:
-      enabled: false
-      text: "&cTeleport requests disabled."
-
 # ┌──────────────────────────────────────────────────────────────┐
 # │ Proxy / Cross-server messaging                               │
 # └──────────────────────────────────────────────────────────────┘
@@ -91,9 +119,6 @@ proxy:
   #  - Set this to true
   enabled: true
 
-  # If proxy messaging fails, fall back to local message only.
-  fallback_to_local: true
-
 # ┌──────────────────────────────────────────────────────────────┐
 # │ Command Auto-Completion / Player lookup                      │
 # └──────────────────────────────────────────────────────────────┘
@@ -107,8 +132,58 @@ cache:
 # ┌──────────────────────────────────────────────────────────────┐
 # │ Menus                                                        │
 # └──────────────────────────────────────────────────────────────┘
+### Menu Builder Guide (Confirm Request Menu)
+# This menu is built from config each time it opens.
+# - "rows" controls size (rows * 9 slots)
+# - "items" are extra display items you can add anywhere
+# - "deny" and "accept" are the ONLY clickable buttons by default
+#   (extra items are display-only unless you add click logic in code)
+
+# slots:
+# - A chest GUI is a grid of 9 columns.
+# - Slots are 0..(rows*9 - 1)
+# - Example for 3 rows (27 slots):
+#   Row 1:  0  1  2  3  4  5  6  7  8
+#   Row 2:  9 10 11 12 13 14 15 16 17
+#   Row 3: 18 19 20 21 22 23 24 25 26
+
+# Supported menu item "type" values
+# 1) ITEM
+#    - A normal material item with name/lore
+#    - Keys:
+#      material: <Bukkit Material name>
+#      name: "<colored name>"
+#      lore: ["<line1>", "<line2>"]
+#
+# 2) DIMENSION_ITEM
+#    - Shows an icon depending on the SENDER's world (Overworld/Nether/End)
+#    - Keys:
+#      overworld_material: GRASS_BLOCK
+#      nether_material: NETHERRACK
+#      end_material: END_STONE
+#      name/lore same as ITEM
+#
+# 3) PLAYER_HEAD
+#    - Shows a player head skin
+#    - Keys:
+#      head_of: SENDER | VIEWER | NAME
+#      head_name: "<exact player name>"     # only used when head_of: NAME
+#      name/lore same as ITEM
+
+# Common keys for any entry in "items":
+# - slot: <number>        # where it goes in the GUI
+# - type: <one of above>
+# - requires_proxy: true  # optional: only show if proxy.enabled = true
+
+# Placeholders supported in name/lore:
+# - %sender%           -> the requesting player's name
+# - %dimension_name%   -> Overworld / Nether / The End (based on sender)
+# - %region%           -> "Local" or "Remote" (simple placeholder)
+
 menus:
   confirm_request:
+    # Enables the menu
+    enabled: true
     # Menu title used when the plugin can't determine a request type (fallback)
     title: "&7CONFIRM REQUEST"
 
@@ -198,10 +273,6 @@ menus:
 # │ Commands                                                     │
 # └──────────────────────────────────────────────────────────────┘
 commands:
-  # If true, the plugin will “hijack” /tpa and /tpahere and route to GUI or your handlers
-  # Turn this off if you don't want to use the GUI when you click accept or decline in chat
-  hijack_huskhomes_commands: true
-
   # Allow /tpa <player> even if they’re not on the same backend (proxy cache required)
   # Turn this off if you don't want it to auto-complete the command line
   allow_proxy_targeting: true

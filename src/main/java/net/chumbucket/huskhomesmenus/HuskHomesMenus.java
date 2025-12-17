@@ -28,7 +28,7 @@ public final class HuskHomesMenus extends JavaPlugin {
         // Menu
         ConfirmRequestMenu confirmMenu = new ConfirmRequestMenu(this, config);
         Bukkit.getPluginManager().registerEvents(confirmMenu, this);
-        Bukkit.getPluginManager().registerEvents(new TeleportCommandInterceptListener(confirmMenu), this);
+        Bukkit.getPluginManager().registerEvents(new TeleportCommandInterceptListener(confirmMenu, config), this);
 
         // Teleport request commands (wrappers around HuskHomes)
         safeSetExecutor("tpa", new TpaCommand(toggleManager, config));
