@@ -6,7 +6,9 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import java.io.*;
-import java.util.UUID;
+import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.function.Consumer;
 
 public final class OptionalProxyMessenger implements PluginMessageListener {
 
@@ -20,6 +22,10 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
     private final JavaPlugin plugin;
     private final HHMConfig config;
     private boolean enabled = false;
+
+    // PlayerList callbacks (tab completion cache)
+    private final List<Consumer<List<String>>> playerListCallbacks = new CopyOnWriteArrayList<>();
+    private volatile long lastPlayerListReceiveMs = 0L;
 
     public OptionalProxyMessenger(JavaPlugin plugin, HHMConfig config) {
         this.plugin = plugin;
@@ -97,6 +103,28 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
         }
     }
 
+    /**
+     * Request the proxy-wide player list (Bungee plugin message: PlayerList ALL).
+     * Callback is invoked on the server thread when the response arrives.
+     */
+    public boolean requestProxyPlayerList(Consumer<List<String>> callback) {
+        if (!enabled) return false;
+        if (callback != null) playerListCallbacks.add(callback);
+
+        try {
+            Player carrier = anyOnlinePlayer();
+            if (carrier == null) return false;
+
+            byte[] payload = buildPlayerListAllPacket();
+            carrier.sendPluginMessage(plugin, CHANNEL_MODERN, payload);
+            carrier.sendPluginMessage(plugin, CHANNEL_LEGACY, payload);
+            return true;
+        } catch (Throwable t) {
+            plugin.getLogger().warning("Failed to request proxy player list: " + t.getMessage());
+            return false;
+        }
+    }
+
     private Player anyOnlinePlayer() {
         for (Player p : Bukkit.getOnlinePlayers()) return p;
         return null;
@@ -122,8 +150,53 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
         return bytes.toByteArray();
     }
 
+    private byte[] buildPlayerListAllPacket() throws IOException {
+        ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+        DataOutputStream out = new DataOutputStream(bytes);
+        out.writeUTF("PlayerList");
+        out.writeUTF("ALL");
+        return bytes.toByteArray();
+    }
+
     @Override
     public void onPluginMessageReceived(String channel, Player player, byte[] message) {
-        // If later you want cross-backend inbound handling, add it here.
+        if (!enabled) return;
+        if (message == null || message.length == 0) return;
+
+        try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(message))) {
+            String sub = in.readUTF();
+            if (!"PlayerList".equalsIgnoreCase(sub)) return;
+
+            // Avoid handling duplicate responses from modern+legacy channels back-to-back
+            long now = System.currentTimeMillis();
+            if (now - lastPlayerListReceiveMs < 75) return;
+            lastPlayerListReceiveMs = now;
+
+            String scope = in.readUTF(); // "ALL"
+            String csv = in.readUTF();   // "name1, name2, name3"
+            List<String> names = parsePlayerCsv(csv);
+
+            for (Consumer<List<String>> cb : playerListCallbacks) {
+                try { cb.accept(names); } catch (Throwable ignored) {}
+            }
+            playerListCallbacks.clear();
+        } catch (Throwable ignored) {
+            // ignore invalid plugin messages
+        }
+    }
+
+    private List<String> parsePlayerCsv(String csv) {
+        if (csv == null) return List.of();
+        csv = csv.trim();
+        if (csv.isEmpty()) return List.of();
+
+        String[] parts = csv.split(",\\s*");
+        ArrayList<String> out = new ArrayList<>(parts.length);
+        for (String p : parts) {
+            if (p == null) continue;
+            String s = p.trim();
+            if (!s.isEmpty()) out.add(s);
+        }
+        return out;
     }
 }

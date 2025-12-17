@@ -12,7 +12,6 @@ public final class HuskHomesMenus extends JavaPlugin {
 
     @Override
     public void onEnable() {
-        // ensures config.yml exists on disk (must be included in your jar resources)
         saveDefaultConfig();
 
         this.config = new HHMConfig(this);
@@ -21,6 +20,10 @@ public final class HuskHomesMenus extends JavaPlugin {
         // Velocity / proxy messaging (config-driven)
         this.messenger = new OptionalProxyMessenger(this, config);
         this.messenger.tryEnable();
+
+        // Proxy player cache (for tab completion)
+        ProxyPlayerCache playerCache = new ProxyPlayerCache(this, config, messenger);
+        playerCache.start();
 
         // Menu
         ConfirmRequestMenu confirmMenu = new ConfirmRequestMenu(this, config);
@@ -32,6 +35,12 @@ public final class HuskHomesMenus extends JavaPlugin {
         safeSetExecutor("tpahere", new TpaHereCommand(toggleManager, config));
         safeSetExecutor("tpaccept", new TpAcceptCommand(confirmMenu));
         safeSetExecutor("tpdeny", new TpDenyCommand());
+
+        // ✅ Tab completion across proxy + remove own name
+        safeSetTabCompleter("tpa", new ProxyTabCompleter(playerCache, true));
+        safeSetTabCompleter("tpahere", new ProxyTabCompleter(playerCache, true));
+        safeSetTabCompleter("tpaccept", new ProxyTabCompleter(playerCache, false));
+        safeSetTabCompleter("tpdeny", new ProxyTabCompleter(playerCache, false));
 
         // Toggle commands
         ToggleCommands toggleCommands = new ToggleCommands(toggleManager, config);
@@ -59,5 +68,14 @@ public final class HuskHomesMenus extends JavaPlugin {
             return;
         }
         pc.setExecutor(exec);
+    }
+
+    private void safeSetTabCompleter(String cmd, org.bukkit.command.TabCompleter completer) {
+        PluginCommand pc = getCommand(cmd);
+        if (pc == null) {
+            getLogger().warning("Command '/" + cmd + "' not found in plugin.yml (tab completer not set).");
+            return;
+        }
+        pc.setTabCompleter(completer);
     }
 }

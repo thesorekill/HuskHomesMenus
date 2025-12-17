@@ -172,7 +172,6 @@ public final class ConfirmRequestMenu implements Listener {
             }
 
             PendingRequests.clear(p.getUniqueId());
-            PendingRequests.clearBypass(p.getUniqueId());
 
             // Belt + suspenders: close again after running
             if (close) p.closeInventory();

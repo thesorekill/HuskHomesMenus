@@ -7,7 +7,9 @@ net\chumbucket\huskhomesmenus\TeleportCommandInterceptListener.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$ConfirmHolder.class
 net\chumbucket\huskhomesmenus\TpaCommand.class
 net\chumbucket\huskhomesmenus\PendingRequests$Pending.class
+net\chumbucket\huskhomesmenus\ProxyTabCompleter.class
 net\chumbucket\huskhomesmenus\HuskHomesMenus.class
+net\chumbucket\huskhomesmenus\ProxyPlayerCache.class
 net\chumbucket\huskhomesmenus\OptionalProxyMessenger.class
 net\chumbucket\huskhomesmenus\TeleportRequestToggleListener$ReqType.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$RequestType.class
