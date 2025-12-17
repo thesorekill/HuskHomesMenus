@@ -14,7 +14,7 @@ public final class ProxyPlayerCache {
     private final OptionalProxyMessenger messenger;
 
     private volatile List<String> cached = List.of();
-    private final Map<String, String> playerToServer = new ConcurrentHashMap<>(); // will remain empty in fast mode
+    private final Map<String, String> playerToServer = new ConcurrentHashMap<>();
 
     private volatile long lastRefreshMs = 0L;
     private volatile long negativeUntilMs = 0L;
@@ -27,8 +27,7 @@ public final class ProxyPlayerCache {
     }
 
     public void start() {
-        // You can drop this lower in config.yml to make autocomplete feel instant (e.g., 5)
-        int seconds = Math.max(2, plugin.getConfig().getInt("cache.refresh_interval_seconds", 10));
+        int seconds = Math.max(5, plugin.getConfig().getInt("cache.refresh_interval_seconds", 30));
         long periodTicks = seconds * 20L;
 
         Bukkit.getScheduler().runTaskTimer(plugin, this::refreshAsyncish, 20L, periodTicks);
@@ -41,14 +40,13 @@ public final class ProxyPlayerCache {
     }
 
     public String getServerFor(String playerName) {
-        // Fast mode does not populate server mapping (PlayerList ALL doesn't provide it)
         if (playerName == null) return null;
         if (isStale()) refreshAsyncish();
         return playerToServer.get(playerName);
     }
 
     private boolean isStale() {
-        int seconds = Math.max(2, plugin.getConfig().getInt("cache.refresh_interval_seconds", 10));
+        int seconds = Math.max(5, plugin.getConfig().getInt("cache.refresh_interval_seconds", 30));
         long maxAgeMs = seconds * 1000L;
         return (System.currentTimeMillis() - lastRefreshMs) > maxAgeMs;
     }
@@ -63,18 +61,74 @@ public final class ProxyPlayerCache {
 
         if (!refreshInFlight.compareAndSet(false, true)) return;
 
-        // ✅ Fast path: single request to the proxy for ALL players
-        boolean sentAll = messenger.requestProxyPlayerList(names ->
-                Bukkit.getScheduler().runTask(plugin, () -> {
-                    cached = (names == null) ? List.of() : new ArrayList<>(new LinkedHashSet<>(names));
-                    playerToServer.clear(); // no server mapping in ALL mode
-                    lastRefreshMs = System.currentTimeMillis();
-                    refreshInFlight.set(false);
-                })
-        );
+        // Mapping-first refresh: GetServers -> PlayerList <server> (for player->server map)
+        boolean sent = messenger.requestProxyServers(servers -> {
+            try {
+                if (servers == null || servers.isEmpty()) {
+                    // Fallback: still populate cached names if proxy won't return servers list
+                    boolean sentAll = messenger.requestProxyPlayerList(names ->
+                            Bukkit.getScheduler().runTask(plugin, () -> {
+                                cached = (names == null) ? List.of() : new ArrayList<>(new LinkedHashSet<>(names));
+                                // no server mapping possible here
+                                playerToServer.clear();
+                                lastRefreshMs = System.currentTimeMillis();
+                                refreshInFlight.set(false);
+                            })
+                    );
 
-        if (!sentAll) {
-            long negMs = Math.max(500L, plugin.getConfig().getLong("cache.negative_cache_millis", 2000L));
+                    if (!sentAll) {
+                        Bukkit.getScheduler().runTask(plugin, () -> {
+                            cached = List.of();
+                            playerToServer.clear();
+                            lastRefreshMs = System.currentTimeMillis();
+                            refreshInFlight.set(false);
+                        });
+                    }
+                    return;
+                }
+
+                LinkedHashSet<String> allPlayers = new LinkedHashSet<>();
+                HashMap<String, String> map = new HashMap<>();
+
+                Iterator<String> it = servers.iterator();
+
+                Runnable next = new Runnable() {
+                    @Override
+                    public void run() {
+                        if (!it.hasNext()) {
+                            cached = new ArrayList<>(allPlayers);
+                            playerToServer.clear();
+                            playerToServer.putAll(map);
+                            lastRefreshMs = System.currentTimeMillis();
+                            refreshInFlight.set(false);
+                            return;
+                        }
+
+                        String server = it.next();
+                        messenger.requestPlayerListForServer(server, (srv, names) -> {
+                            if (names != null) {
+                                for (String n : names) {
+                                    if (n == null) continue;
+                                    String name = n.trim();
+                                    if (name.isEmpty()) continue;
+                                    allPlayers.add(name);
+                                    map.put(name, srv);
+                                }
+                            }
+                            Bukkit.getScheduler().runTask(plugin, this);
+                        });
+                    }
+                };
+
+                Bukkit.getScheduler().runTask(plugin, next);
+
+            } catch (Throwable t) {
+                refreshInFlight.set(false);
+            }
+        });
+
+        if (!sent) {
+            long negMs = Math.max(1000L, plugin.getConfig().getLong("cache.negative_cache_millis", 10000L));
             negativeUntilMs = System.currentTimeMillis() + negMs;
             refreshInFlight.set(false);
         }

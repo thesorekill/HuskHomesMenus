@@ -434,21 +434,14 @@ public final class ConfirmRequestMenu implements Listener {
     // Region + dimension resolution
     // ---------------------------
     private String resolveRegion(String senderName) {
-        // If proxy not enabled, we can only say Local/Unknown. But you asked not to show Unknown for region.
         if (!config.proxyEnabled()) return "Local";
 
-        // If sender is on this backend, show Local (or you can change to your server name if you want)
-        Player sender = (senderName != null) ? Bukkit.getPlayerExact(senderName) : null;
-        if (sender != null) return "Local";
-
-        // Otherwise, use proxy cache mapping: player -> server
+        // Use proxy-derived mapping (works for remote players)
         String srv = (playerCache != null) ? playerCache.getServerFor(senderName) : null;
-
-        // Never "Unknown" per your request:
-        // - if cache not warmed up yet, show Loading...
-        // - if truly not found, show Offline
         if (srv != null && !srv.isBlank()) return srv;
-        return "Loading...";
+
+        // If they're on the same backend (or mapping hasn't populated yet)
+        return "Local";
     }
 
     private String resolveDimension(String senderName) {
