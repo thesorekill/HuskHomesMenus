@@ -22,10 +22,15 @@ public final class HuskHomesMenus extends JavaPlugin {
         this.messenger = new OptionalProxyMessenger(this, config);
         this.messenger.tryEnable();
 
+        // Menu
+        ConfirmRequestMenu confirmMenu = new ConfirmRequestMenu(this, config);
+        Bukkit.getPluginManager().registerEvents(confirmMenu, this);
+        Bukkit.getPluginManager().registerEvents(new TeleportCommandInterceptListener(confirmMenu), this);
+
         // Teleport request commands (wrappers around HuskHomes)
         safeSetExecutor("tpa", new TpaCommand(toggleManager, config));
         safeSetExecutor("tpahere", new TpaHereCommand(toggleManager, config));
-        safeSetExecutor("tpaccept", new TpAcceptCommand());
+        safeSetExecutor("tpaccept", new TpAcceptCommand(confirmMenu));
         safeSetExecutor("tpdeny", new TpDenyCommand());
 
         // Toggle commands

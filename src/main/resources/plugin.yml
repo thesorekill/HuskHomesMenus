@@ -59,28 +59,28 @@ permissions:
 
   huskhomesmenus.tpatoggle:
     description: Allows toggling /tpa request reception
-    default: true
+    default: false
   huskhomesmenus.tpaheretoggle:
     description: Allows toggling /tpahere request reception
-    default: true
+    default: false
 
   huskhomesmenus.tpa:
     description: Allows sending /tpa requests
-    default: true
+    default: false
   huskhomesmenus.tpahere:
     description: Allows sending /tpahere requests
-    default: true
+    default: false
 
   huskhomesmenus.tpaccept:
     description: Allows accepting teleport requests
     default: true
   huskhomesmenus.tpdeny:
     description: Allows denying teleport requests
-    default: true
+    default: false
 
   huskhomesmenus.hhmaccept:
     description: Allows clicking accept menu message
-    default: true
+    default: false
   huskhomesmenus.hhmdeny:
     description: Allows clicking deny menu message
-    default: true
+    default: false

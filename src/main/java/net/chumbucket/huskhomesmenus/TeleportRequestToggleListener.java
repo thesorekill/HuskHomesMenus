@@ -42,7 +42,14 @@ public final class TeleportRequestToggleListener implements Listener {
         final boolean tpahereOn = toggles.isTpahereOn(target);
 
         final boolean allowed = (type == ReqType.TPA) ? tpaOn : tpahereOn;
-        if (allowed) return;
+        if (allowed) {
+            String requesterName = resolveRequesterName(event);
+            ConfirmRequestMenu.RequestType rt = (type == ReqType.TPA) ? ConfirmRequestMenu.RequestType.TPA : ConfirmRequestMenu.RequestType.TPAHERE;
+            if (requesterName != null && !requesterName.isBlank()) {
+                PendingRequests.set(target.getUniqueId(), requesterName, rt);
+            }
+            return;
+        }
 
         // Cancel always
         event.setCancelled(true);
