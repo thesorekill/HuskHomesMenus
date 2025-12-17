@@ -124,10 +124,10 @@ proxy:
 # └──────────────────────────────────────────────────────────────┘
 cache:
   # How often to refresh the proxy player list cache (seconds)
-  refresh_interval_seconds: 30
+  refresh_interval_seconds: 5
 
   # If a lookup fails, how long (ms) to remember that failure
-  negative_cache_millis: 10000
+  negative_cache_millis: 2000
 
 # ┌──────────────────────────────────────────────────────────────┐
 # │ Menus                                                        │

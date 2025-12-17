@@ -262,7 +262,8 @@ public final class ConfirmRequestMenu implements Listener {
             if (doAccept) runAccept(p, sender, type);
             else runDeny(p, sender, type);
 
-            PendingRequests.clear(p.getUniqueId());
+            if (sender != null && !sender.isBlank()) PendingRequests.remove(p.getUniqueId(), sender);
+            else PendingRequests.clear(p.getUniqueId());
             if (close) p.closeInventory();
         }, 1L);
     }

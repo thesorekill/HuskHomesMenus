@@ -19,9 +19,19 @@ public final class TpAcceptCommand implements CommandExecutor {
             return true;
         }
 
-        // If HuskHomes ran /tpaccept <name>, we already know the sender
+        // If HuskHomes ran /tpaccept <name>, we know the sender name; lookup the request type if possible
         if (args.length == 1) {
-            menu.open(p, args[0], ConfirmRequestMenu.RequestType.TPA); // type unknown; GUI still works
+            String requester = args[0];
+
+            ConfirmRequestMenu.RequestType type = ConfirmRequestMenu.RequestType.TPA; // default fallback
+            PendingRequests.Pending byName = PendingRequests.get(p.getUniqueId(), requester);
+            if (byName != null && byName.type() != null) {
+                type = byName.type();
+                // use the canonical stored name (keeps capitalization consistent)
+                requester = byName.senderName();
+            }
+
+            menu.open(p, requester, type);
             return true;
         }
 

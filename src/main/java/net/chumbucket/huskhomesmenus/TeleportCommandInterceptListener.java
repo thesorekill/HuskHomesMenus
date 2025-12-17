@@ -71,7 +71,7 @@ public final class TeleportCommandInterceptListener implements Listener {
         // Optional arg (requester name)
         String requesterName = (parts.length > argIndex) ? parts[argIndex] : null;
 
-        // Fall back to last remembered request
+        // Fall back to last remembered request for missing arg
         if (requesterName == null || requesterName.isBlank()) {
             PendingRequests.Pending pending = PendingRequests.get(p.getUniqueId());
             if (pending == null) {
@@ -81,11 +81,20 @@ public final class TeleportCommandInterceptListener implements Listener {
             requesterName = pending.senderName();
         }
 
-        // Use remembered request type if possible
+        // ✅ Correct type resolution:
+        // 1) If command included a requester name, prefer the pending entry for that requester
+        // 2) Otherwise fall back to the "last" pending entry
         ConfirmRequestMenu.RequestType type = ConfirmRequestMenu.RequestType.TPA;
-        PendingRequests.Pending pending = PendingRequests.get(p.getUniqueId());
-        if (pending != null && pending.type() != null) {
-            type = pending.type();
+
+        PendingRequests.Pending byName = PendingRequests.get(p.getUniqueId(), requesterName);
+        if (byName != null && byName.type() != null) {
+            type = byName.type();
+            requesterName = byName.senderName(); // keep canonical casing if stored
+        } else {
+            PendingRequests.Pending last = PendingRequests.get(p.getUniqueId());
+            if (last != null && last.type() != null) {
+                type = last.type();
+            }
         }
 
         menu.open(p, requesterName, type);

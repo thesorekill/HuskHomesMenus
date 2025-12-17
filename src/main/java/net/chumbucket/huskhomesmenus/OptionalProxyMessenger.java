@@ -7,30 +7,29 @@ import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import java.io.*;
 import java.util.*;
-import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 public final class OptionalProxyMessenger implements PluginMessageListener {
 
-    // Support both (different setups expect different channel IDs)
     public static final String CHANNEL_MODERN = "bungeecord:main";
     public static final String CHANNEL_LEGACY = "BungeeCord";
 
-    // Used by forwardTo(UUID,msg) (TeleportRequestToggleListener)
     public static final String SUBCHANNEL = "HuskHomesMenus:Msg";
 
     private final JavaPlugin plugin;
     private final HHMConfig config;
     private boolean enabled = false;
 
-    // --- Callbacks for proxy queries (region cache) ---
-    private final List<Consumer<List<String>>> getServersCallbacks = new CopyOnWriteArrayList<>();
-    private final List<BiConsumer<String, List<String>>> playerListServerCallbacks = new CopyOnWriteArrayList<>();
-    private final List<Consumer<List<String>>> playerListAllCallbacks = new CopyOnWriteArrayList<>();
+    // One-shot GetServers callbacks
+    private final List<Consumer<List<String>>> getServersCallbacks = Collections.synchronizedList(new ArrayList<>());
 
-    // prevent double-processing when both channels deliver same response
-    private volatile long lastReceiveMs = 0L;
+    // ✅ Per-server one-shot callbacks (serverLower -> callback)
+    private final ConcurrentHashMap<String, BiConsumer<String, List<String>>> perServerPlayerList = new ConcurrentHashMap<>();
+
+    // ✅ One-shot PlayerList ALL callback(s)
+    private final List<Consumer<List<String>>> playerListAllCallbacks = Collections.synchronizedList(new ArrayList<>());
 
     public OptionalProxyMessenger(JavaPlugin plugin, HHMConfig config) {
         this.plugin = plugin;
@@ -64,10 +63,9 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
     }
 
     // =========================================================
-    // ✅ Existing API used by TeleportRequestToggleListener
+    // Existing API
     // =========================================================
 
-    /** Proxy "Message" subchannel (sends chat message to player by name). */
     public boolean messagePlayer(String playerName, String message) {
         if (!enabled) return false;
         if (playerName == null || playerName.isBlank()) return false;
@@ -86,7 +84,6 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
         }
     }
 
-    /** Proxy "ForwardToPlayer" to deliver data to target backend (SUBCHANNEL). */
     public boolean forwardTo(UUID targetUuid, String message) {
         if (!enabled) return false;
         if (targetUuid == null) return false;
@@ -110,10 +107,9 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
     }
 
     // =========================================================
-    // ✅ New API used by ProxyPlayerCache (REGION mapping)
+    // API used by ProxyPlayerCache
     // =========================================================
 
-    /** GetServers -> returns list of server IDs (proxy side names). */
     public boolean requestProxyServers(Consumer<List<String>> callback) {
         if (!enabled) return false;
         if (callback != null) getServersCallbacks.add(callback);
@@ -132,15 +128,18 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
         }
     }
 
-    /** PlayerList <server> -> returns players on that specific server. */
     public boolean requestPlayerListForServer(String server, BiConsumer<String, List<String>> callback) {
         if (!enabled) return false;
         if (server == null || server.isBlank()) return false;
-        if (callback != null) playerListServerCallbacks.add(callback);
 
         try {
             Player carrier = anyOnlinePlayer();
             if (carrier == null) return false;
+
+            // ✅ store callback for this server (one-shot)
+            if (callback != null) {
+                perServerPlayerList.put(server.toLowerCase(Locale.ROOT), callback);
+            }
 
             byte[] payload = buildPlayerListPacket(server);
             carrier.sendPluginMessage(plugin, CHANNEL_MODERN, payload);
@@ -152,7 +151,6 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
         }
     }
 
-    /** PlayerList ALL -> returns players across proxy. (Optional; may be used elsewhere.) */
     public boolean requestProxyPlayerList(Consumer<List<String>> callback) {
         if (!enabled) return false;
         if (callback != null) playerListAllCallbacks.add(callback);
@@ -216,7 +214,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
     }
 
     // =========================================================
-    // Incoming responses for GetServers / PlayerList
+    // Incoming responses
     // =========================================================
 
     @Override
@@ -224,10 +222,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
         if (!enabled) return;
         if (message == null || message.length == 0) return;
 
-        // ignore duplicates from modern+legacy back-to-back
-        long now = System.currentTimeMillis();
-        if (now - lastReceiveMs < 75) return;
-        lastReceiveMs = now;
+        // We intentionally do NOT suppress “fast duplicates” — modern+legacy can arrive quickly.
 
         try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(message))) {
             String sub = in.readUTF();
@@ -236,28 +231,41 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
             if ("GetServers".equalsIgnoreCase(sub)) {
                 String csv = in.readUTF();
                 List<String> servers = parseCsv(csv);
-                for (var cb : getServersCallbacks) {
+
+                List<Consumer<List<String>>> copy;
+                synchronized (getServersCallbacks) {
+                    copy = new ArrayList<>(getServersCallbacks);
+                    getServersCallbacks.clear();
+                }
+
+                for (var cb : copy) {
                     try { cb.accept(servers); } catch (Throwable ignored) {}
                 }
-                getServersCallbacks.clear();
                 return;
             }
 
             if ("PlayerList".equalsIgnoreCase(sub)) {
-                String server = in.readUTF(); // "ALL" or specific server
+                String server = in.readUTF(); // "ALL" or server
                 String csv = in.readUTF();
                 List<String> names = parseCsv(csv);
 
                 if ("ALL".equalsIgnoreCase(server)) {
-                    for (var cb : playerListAllCallbacks) {
+                    List<Consumer<List<String>>> copy;
+                    synchronized (playerListAllCallbacks) {
+                        copy = new ArrayList<>(playerListAllCallbacks);
+                        playerListAllCallbacks.clear();
+                    }
+                    for (var cb : copy) {
                         try { cb.accept(names); } catch (Throwable ignored) {}
                     }
-                    playerListAllCallbacks.clear();
-                } else {
-                    for (var cb : playerListServerCallbacks) {
-                        try { cb.accept(server, names); } catch (Throwable ignored) {}
-                    }
-                    playerListServerCallbacks.clear();
+                    return;
+                }
+
+                // ✅ only consume the callback for THIS server
+                String key = server.toLowerCase(Locale.ROOT);
+                BiConsumer<String, List<String>> cb = perServerPlayerList.remove(key);
+                if (cb != null) {
+                    try { cb.accept(server, names); } catch (Throwable ignored) {}
                 }
             }
         } catch (Throwable ignored) {
