@@ -9,10 +9,12 @@ public final class Placeholders extends PlaceholderExpansion {
 
     private final JavaPlugin plugin;
     private final ToggleManager toggles;
+    private final HHMConfig config;
 
-    public Placeholders(JavaPlugin plugin, ToggleManager toggles) {
+    public Placeholders(JavaPlugin plugin, ToggleManager toggles, HHMConfig config) {
         this.plugin = plugin;
         this.toggles = toggles;
+        this.config = config;
     }
 
     @Override
@@ -22,7 +24,7 @@ public final class Placeholders extends PlaceholderExpansion {
 
     @Override
     public String getAuthor() {
-        return "chumbucket";
+        return "Chumbucket";
     }
 
     @Override
@@ -30,26 +32,11 @@ public final class Placeholders extends PlaceholderExpansion {
         return plugin.getDescription().getVersion();
     }
 
-    /**
-     * Placeholders provided by this expansion:
-     *
-     * Pretty (colored):
-     *  - %huskhomesmenus_tpa_pretty%
-     *  - %huskhomesmenus_tpahere_pretty%
-     *  - %huskhomesmenus_requests_pretty%
-     *
-     * Raw booleans:
-     *  - %huskhomesmenus_tpa%
-     *  - %huskhomesmenus_tpahere%
-     *
-     * Plain text:
-     *  - %huskhomesmenus_tpa_text%
-     *  - %huskhomesmenus_tpahere_text%
-     *
-     * Icons:
-     *  - %huskhomesmenus_tpa_icon%
-     *  - %huskhomesmenus_tpahere_icon%
-     */
+    @Override
+    public boolean persist() {
+        return true;
+    }
+
     @Override
     public String onPlaceholderRequest(Player player, String params) {
         if (player == null || params == null) {
@@ -66,19 +53,19 @@ public final class Placeholders extends PlaceholderExpansion {
             case "tpahere_pretty":
                 return pretty(tpahere);
 
-            // Raw booleans (useful for conditional formatting in some plugins)
+            // Raw booleans
             case "tpa":
                 return String.valueOf(tpa);
             case "tpahere":
                 return String.valueOf(tpahere);
 
-            // Plain text (no colors)
+            // Text
             case "tpa_text":
                 return tpa ? "ON" : "OFF";
             case "tpahere_text":
                 return tpahere ? "ON" : "OFF";
 
-            // Icons (scoreboard-friendly)
+            // Icons
             case "tpa_icon":
                 return tpa ? "✔" : "✘";
             case "tpahere_icon":

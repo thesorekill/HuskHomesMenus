@@ -1,0 +1,207 @@
+# ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+# ┃    HuskHomesMenus Config     ┃
+# ┃    Developed by Chumbucket   ┃
+# ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+# ┣╸ Plugin: HuskHomesMenus
+# ┣╸ Purpose: GUI + toggles + proxy-safe messaging for HuskHomes TPA/TPAHERE
+# ┗╸ Notes: Designed for proxy networks (Velocity/Bungee/Waterfall)
+
+# Locale of the default language file to use (reserved for future language packs)
+language: en-us
+
+# Whether to log extra debugging info (recommended OFF unless testing)
+debug: false
+
+# ┌──────────────────────────────────────────────────────────────┐
+# │ Messages                                                     │
+# └──────────────────────────────────────────────────────────────┘
+messages:
+  # Prefix added before most chat messages from this plugin.
+  # Leave blank ("") if you don't want a prefix.
+  prefix: "&8[&bHuskHomesMenus&8]&r "
+
+  # Messages sent to the sender of a teleport request (the person typing /tpa or /tpahere)
+  sender:
+    # Sent to the sender when the target has TPA requests disabled.
+    tpa_off:
+      # If false, this message will not be sent at all.
+      enabled: true
+      text: "&cThat player has &lTPA&r &crequests off."
+
+    # Sent to the sender when the target has TPAHERE requests disabled.
+    tpahere_off:
+      enabled: true
+      text: "&cThat player has &lTPAHERE&r &crequests off."
+
+    # Sent to the sender when the target has *both* TPA and TPAHERE disabled.
+    both_off:
+      enabled: true
+      text: "&cThat player has teleport requests off."
+
+  # Messages sent to the *target* of a teleport request (the person being requested).
+  target:
+    # Sent to the target when a request is blocked by toggles.
+    # Placeholders:
+    # - %sender% -> the player who tried to request
+    blocked_notice:
+      # If false, the target will NOT be notified when a request is blocked.
+      enabled: false
+      text: "&7You blocked a teleport request from &f%sender%&7."
+
+  # Messages shown when a player toggles their request settings (/tpatoggle, /tpaheretoggle)
+  toggles:
+    # If enabled, after toggling we will show the status lines below.
+    show_status_lines:
+      enabled: true
+
+    # Format for the TPA status line (matches your screenshot style).
+    # Placeholders:
+    # - %state% -> ON / OFF
+    # - %color% -> &a for ON, &c for OFF (chosen by the plugin)
+    tpa_status_line:
+      enabled: true
+      text: "%color%TPA requests: %state%"
+
+    # Format for the TPAHERE status line (matches your screenshot style).
+    tpahere_status_line:
+      enabled: true
+      text: "%color%TPAHere requests: %state%"
+
+    # Optional single-line confirmation messages.
+    # Turn these ON if you want an extra "enabled/disabled" message in addition to the status lines.
+    toggled_on:
+      enabled: false
+      text: "&aTeleport requests enabled."
+    toggled_off:
+      enabled: false
+      text: "&cTeleport requests disabled."
+
+# ┌──────────────────────────────────────────────────────────────┐
+# │ Proxy / Cross-server messaging                               │
+# └──────────────────────────────────────────────────────────────┘
+proxy:
+  # Enable this if you are running a proxy (Velocity or BungeeCord/Waterfall).
+  #
+  # Velocity:
+  #  - Set this to true
+  #  - In Velocity's velocity.toml set:
+  #      bungee-plugin-message-channel = true
+  #
+  # BungeeCord/Waterfall:
+  #  - Set this to true
+  enabled: true
+
+  # If proxy messaging fails, fall back to local message only.
+  fallback_to_local: true
+
+# ┌──────────────────────────────────────────────────────────────┐
+# │ Command Auto-Completion / Player lookup                      │
+# └──────────────────────────────────────────────────────────────┘
+cache:
+  # How often to refresh the proxy player list cache (seconds)
+  refresh_interval_seconds: 30
+
+  # If a lookup fails, how long (ms) to remember that failure
+  negative_cache_millis: 10000
+
+# ┌──────────────────────────────────────────────────────────────┐
+# │ Menus                                                        │
+# └──────────────────────────────────────────────────────────────┘
+menus:
+  confirm_request:
+    # Menu title used when the plugin can't determine a request type (fallback)
+    title: "&7CONFIRM REQUEST"
+
+    # Title when the request is a normal /tpa (Teleport Request)
+    title_tpa: "&7TELEPORT REQUEST"
+
+    # Title when the request is /tpahere (Teleport Here Request)
+    title_tpahere: "&7TELEPORT HERE REQUEST"
+
+    # How many rows the menu will have
+    rows: 3
+
+    # If true, fills all empty slots with the filler item below
+    use_filler: false
+
+    # The filler item used when use_filler is true
+    filler:
+      material: GRAY_STAINED_GLASS_PANE
+      name: " "
+      lore: []
+      glow: false
+      custom_model_data: 0
+
+    # Extra static/info items in the menu
+    items:
+      # LOCATION (dimension icon + dimension name) — matches screenshot:
+      # NAME: LOCATION
+      # LORE: Overworld / Nether / The End
+      # ICON: grass/netherrack/endstone
+      - slot: 12
+        type: DIMENSION_ITEM
+        name: "&a&lLOCATION"
+        lore:
+          - "&7%dimension_name%"
+        overworld_material: GRASS_BLOCK
+        nether_material: NETHERRACK
+        end_material: END_STONE
+
+      # PLAYER (sender head) — matches screenshot:
+      # NAME: PLAYER
+      # LORE: TheBobLePonge
+      - slot: 13
+        type: PLAYER_HEAD
+        head_of: SENDER
+        name: "&a&lPLAYER"
+        lore:
+          - "&7%sender%"
+
+      # REGION (server/backend name) — ONLY shown if proxy.enabled is true
+      - slot: 14
+        type: ITEM
+        material: FEATHER
+        name: "&a&lREGION"
+        lore:
+          - "&7%region%"
+        requires_proxy: true
+
+    # CANCEL button — matches screenshot exactly
+    deny:
+      slot: 10
+      item:
+        material: RED_STAINED_GLASS_PANE
+        name: "&c&lCANCEL"
+        lore:
+          - "&7Click to cancel the teleport"
+        glow: false
+        custom_model_data: 0
+      click:
+        sound: UI_BUTTON_CLICK
+        close_menu: true
+
+    # CONFIRM button — matches screenshot exactly
+    accept:
+      slot: 16
+      item:
+        material: LIME_STAINED_GLASS_PANE
+        name: "&a&lCONFIRM"
+        lore:
+          - "&7Click to accept %sender%'s request"
+        glow: false
+        custom_model_data: 0
+      click:
+        sound: UI_BUTTON_CLICK
+        close_menu: true
+
+# ┌──────────────────────────────────────────────────────────────┐
+# │ Commands                                                     │
+# └──────────────────────────────────────────────────────────────┘
+commands:
+  # If true, the plugin will “hijack” /tpa and /tpahere and route to GUI or your handlers
+  # Turn this off if you don't want to use the GUI when you click accept or decline in chat
+  hijack_huskhomes_commands: true
+
+  # Allow /tpa <player> even if they’re not on the same backend (proxy cache required)
+  # Turn this off if you don't want it to auto-complete the command line
+  allow_proxy_targeting: true

@@ -8,34 +8,39 @@ public final class HuskHomesMenus extends JavaPlugin {
 
     private ToggleManager toggleManager;
     private OptionalProxyMessenger messenger;
+    private HHMConfig config;
 
     @Override
     public void onEnable() {
+        // ensures config.yml exists on disk (must be included in your jar resources)
+        saveDefaultConfig();
+
+        this.config = new HHMConfig(this);
         this.toggleManager = new ToggleManager(this);
 
-        // Velocity / proxy messaging
-        this.messenger = new OptionalProxyMessenger(this);
+        // Velocity / proxy messaging (config-driven)
+        this.messenger = new OptionalProxyMessenger(this, config);
         this.messenger.tryEnable();
 
         // Teleport request commands (wrappers around HuskHomes)
-        safeSetExecutor("tpa", new TpaCommand(toggleManager));
-        safeSetExecutor("tpahere", new TpaHereCommand(toggleManager));
+        safeSetExecutor("tpa", new TpaCommand(toggleManager, config));
+        safeSetExecutor("tpahere", new TpaHereCommand(toggleManager, config));
         safeSetExecutor("tpaccept", new TpAcceptCommand());
         safeSetExecutor("tpdeny", new TpDenyCommand());
 
         // Toggle commands
-        ToggleCommands toggleCommands = new ToggleCommands(toggleManager);
+        ToggleCommands toggleCommands = new ToggleCommands(toggleManager, config);
         safeSetExecutor("tpatoggle", toggleCommands);
         safeSetExecutor("tpaheretoggle", toggleCommands);
 
         // Listener (blocks on target backend; messages requester local or cross-backend)
         Bukkit.getPluginManager().registerEvents(
-                new TeleportRequestToggleListener(toggleManager, messenger),
+                new TeleportRequestToggleListener(toggleManager, messenger, config),
                 this
         );
 
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
-            new Placeholders(this, toggleManager).register();
+            new Placeholders(this, toggleManager, config).register();
             getLogger().info("PlaceholderAPI detected; placeholders registered.");
         }
 

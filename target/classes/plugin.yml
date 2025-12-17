@@ -1,10 +1,10 @@
 name: HuskHomesMenus
 version: 1.0.0
 main: net.chumbucket.huskhomesmenus.HuskHomesMenus
-api-version: "1.21"
+api-version: 1.21
 
 depend: [HuskHomes]
-softdepend: [PlaceholderAPI]
+softdepend: [PlaceholderAPI, ProtocolLib]
 
 commands:
   tpa:
@@ -34,6 +34,15 @@ commands:
     usage: /tpaheretoggle
     permission: huskhomesmenus.tpaheretoggle
 
+  hhmaccept:
+    description: Internal - opens accept confirmation menu
+    usage: /hhmaccept <player>
+    permission: huskhomesmenus.hhmaccept
+  hhmdeny:
+    description: Internal - opens deny confirmation menu
+    usage: /hhmdeny <player>
+    permission: huskhomesmenus.hhmdeny
+
 permissions:
   huskhomesmenus.*:
     description: Grants all HuskHomesMenus permissions
@@ -45,6 +54,8 @@ permissions:
       huskhomesmenus.tpahere: true
       huskhomesmenus.tpaccept: true
       huskhomesmenus.tpdeny: true
+      huskhomesmenus.hhmaccept: true
+      huskhomesmenus.hhmdeny: true
 
   huskhomesmenus.tpatoggle:
     description: Allows toggling /tpa request reception
@@ -65,4 +76,11 @@ permissions:
     default: true
   huskhomesmenus.tpdeny:
     description: Allows denying teleport requests
+    default: true
+
+  huskhomesmenus.hhmaccept:
+    description: Allows clicking accept menu message
+    default: true
+  huskhomesmenus.hhmdeny:
+    description: Allows clicking deny menu message
     default: true

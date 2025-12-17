@@ -10,9 +10,11 @@ import org.bukkit.entity.Player;
 public final class TpaHereCommand implements CommandExecutor {
 
     private final ToggleManager toggles;
+    private final HHMConfig config;
 
-    public TpaHereCommand(ToggleManager toggles) {
+    public TpaHereCommand(ToggleManager toggles, HHMConfig config) {
         this.toggles = toggles;
+        this.config = config;
     }
 
     @Override
@@ -28,20 +30,19 @@ public final class TpaHereCommand implements CommandExecutor {
         }
 
         String targetName = args[0];
-        if (targetName.equalsIgnoreCase(player.getName())) {
-            player.sendMessage(ChatColor.RED + "You can't request yourself.");
-            return true;
-        }
 
         Player target = Bukkit.getPlayerExact(targetName);
         if (target != null && !toggles.isTpahereOn(target)) {
-            player.sendMessage(ChatColor.RED + "That player has TPAHere requests turned off.");
+            if (config.isEnabled("messages.sender.tpahere_off.enabled", true)) {
+                player.sendMessage(config.msgWithPrefix("messages.sender.tpahere_off.text",
+                        "&cThat player has &lTPAHere&r &crequests off."));
+            }
             return true;
         }
 
         boolean handled = Bukkit.dispatchCommand(player, "huskhomes:tpahere " + targetName);
         if (!handled) {
-            player.sendMessage(ChatColor.RED + "Failed to run HuskHomes /tpahere.");
+            player.sendMessage(config.prefix() + ChatColor.RED + "Failed to run HuskHomes /tpahere.");
         }
         return true;
     }

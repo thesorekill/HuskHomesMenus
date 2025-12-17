@@ -10,9 +10,11 @@ import org.bukkit.entity.Player;
 public final class TpaCommand implements CommandExecutor {
 
     private final ToggleManager toggles;
+    private final HHMConfig config;
 
-    public TpaCommand(ToggleManager toggles) {
+    public TpaCommand(ToggleManager toggles, HHMConfig config) {
         this.toggles = toggles;
+        this.config = config;
     }
 
     @Override
@@ -28,21 +30,20 @@ public final class TpaCommand implements CommandExecutor {
         }
 
         String targetName = args[0];
-        if (targetName.equalsIgnoreCase(player.getName())) {
-            player.sendMessage(ChatColor.RED + "You can't request yourself.");
-            return true;
-        }
 
         // If target is on this backend, enforce toggle immediately
         Player target = Bukkit.getPlayerExact(targetName);
         if (target != null && !toggles.isTpaOn(target)) {
-            player.sendMessage(ChatColor.RED + "That player has TPA requests turned off.");
+            if (config.isEnabled("messages.sender.tpa_off.enabled", true)) {
+                player.sendMessage(config.msgWithPrefix("messages.sender.tpa_off.text",
+                        "&cThat player has &lTPA&r &crequests off."));
+            }
             return true;
         }
 
         boolean handled = Bukkit.dispatchCommand(player, "huskhomes:tpa " + targetName);
         if (!handled) {
-            player.sendMessage(ChatColor.RED + "Failed to run HuskHomes /tpa.");
+            player.sendMessage(config.prefix() + ChatColor.RED + "Failed to run HuskHomes /tpa.");
         }
         return true;
     }

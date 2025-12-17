@@ -1,11 +1,12 @@
+net\chumbucket\huskhomesmenus\TpaHereCommand.class
+net\chumbucket\huskhomesmenus\Placeholders.class
+net\chumbucket\huskhomesmenus\TpaCommand.class
 net\chumbucket\huskhomesmenus\HuskHomesMenus.class
 net\chumbucket\huskhomesmenus\OptionalProxyMessenger.class
 net\chumbucket\huskhomesmenus\TeleportRequestToggleListener$ReqType.class
-net\chumbucket\huskhomesmenus\TpaHereCommand.class
-net\chumbucket\huskhomesmenus\Placeholders.class
 net\chumbucket\huskhomesmenus\TeleportRequestToggleListener.class
 net\chumbucket\huskhomesmenus\TpDenyCommand.class
 net\chumbucket\huskhomesmenus\ToggleManager.class
-net\chumbucket\huskhomesmenus\TpaCommand.class
+net\chumbucket\huskhomesmenus\HHMConfig.class
 net\chumbucket\huskhomesmenus\TpAcceptCommand.class
 net\chumbucket\huskhomesmenus\ToggleCommands.class
