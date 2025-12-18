@@ -2,7 +2,6 @@ package net.chumbucket.huskhomesmenus;
 
 import net.william278.huskhomes.event.ReceiveTeleportRequestEvent;
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -44,17 +43,18 @@ public final class TeleportRequestToggleListener implements Listener {
         final boolean allowed = (type == ReqType.TPA) ? tpaOn : tpahereOn;
         if (allowed) {
             String requesterName = resolveRequesterName(event);
-            ConfirmRequestMenu.RequestType rt = (type == ReqType.TPA) ? ConfirmRequestMenu.RequestType.TPA : ConfirmRequestMenu.RequestType.TPAHERE;
+            ConfirmRequestMenu.RequestType rt = (type == ReqType.TPA)
+                    ? ConfirmRequestMenu.RequestType.TPA
+                    : ConfirmRequestMenu.RequestType.TPAHERE;
+
             if (requesterName != null && !requesterName.isBlank()) {
-                PendingRequests.set(target.getUniqueId(), requesterName, rt);
+                PendingRequests.set(target.getUniqueId(), requesterName, resolveRequesterUuid(event), rt);
             }
             return;
         }
 
-        // Cancel always
         event.setCancelled(true);
 
-        // Optional: notify the target that they blocked a request
         if (config.isEnabled("messages.target.blocked_notice.enabled", false)) {
             String requesterName = resolveRequesterName(event);
             if (requesterName == null || requesterName.isBlank()) requesterName = "someone";
@@ -64,7 +64,6 @@ public final class TeleportRequestToggleListener implements Listener {
             target.sendMessage(notice);
         }
 
-        // Build message from config.yml
         String msg = null;
         if (!tpaOn && !tpahereOn) {
             if (config.isEnabled("messages.sender.both_off.enabled", true)) {
@@ -83,10 +82,8 @@ public final class TeleportRequestToggleListener implements Listener {
             }
         }
 
-        // If message disabled, still cancel silently
         if (msg == null) msg = "";
 
-        // Local requester? send directly
         final Player requester = resolveRequesterPlayer(event);
         if (requester != null) {
             if (!msg.isEmpty()) requester.sendMessage(msg);
@@ -94,20 +91,17 @@ public final class TeleportRequestToggleListener implements Listener {
             return;
         }
 
-        // Cross-server messaging requires messenger enabled
         if (!messenger.isEnabled()) {
             if (debug) Bukkit.getLogger().info("[HHM] messenger disabled; cannot send cross-server denial");
             return;
         }
 
-        // If no carrier player online, can't send plugin messages
         Player carrier = anyOnlinePlayer();
         if (carrier == null) {
             if (debug) Bukkit.getLogger().info("[HHM] No carrier player online; cannot send plugin message");
             return;
         }
 
-        // Try requester name (Message subchannel) first
         final String requesterName = resolveRequesterName(event);
         if (requesterName != null && !requesterName.isBlank() && !msg.isEmpty()) {
             boolean ok = messenger.messagePlayer(requesterName, msg);
@@ -117,13 +111,23 @@ public final class TeleportRequestToggleListener implements Listener {
             if (debug) Bukkit.getLogger().info("[HHM] requesterName unresolved; cannot use messagePlayer");
         }
 
-        // Fallback: ForwardToPlayer if we can resolve requester UUID
         final UUID requesterUuid = resolveRequesterUuid(event);
         if (requesterUuid != null && !msg.isEmpty()) {
-            boolean ok = messenger.forwardTo(requesterUuid, msg);
-            if (debug) Bukkit.getLogger().info("[HHM] messenger.forwardTo -> " + ok);
+            boolean ok = tryForwardToIfPresent(messenger, requesterUuid, msg);
+            if (debug) Bukkit.getLogger().info("[HHM] messenger.forwardTo (reflective) -> " + ok);
         } else {
             if (debug) Bukkit.getLogger().info("[HHM] requesterUuid unresolved; cannot forward denial");
+        }
+    }
+
+    private boolean tryForwardToIfPresent(OptionalProxyMessenger messenger, UUID uuid, String msg) {
+        try {
+            Method m = messenger.getClass().getMethod("forwardTo", UUID.class, String.class);
+            Object r = m.invoke(messenger, uuid, msg);
+            if (r instanceof Boolean b) return b;
+            return true;
+        } catch (Throwable ignored) {
+            return false;
         }
     }
 
@@ -134,10 +138,8 @@ public final class TeleportRequestToggleListener implements Listener {
 
     private ReqType resolveRequestType(ReceiveTeleportRequestEvent event) {
         String s = event.getClass().getSimpleName().toLowerCase(Locale.ROOT);
-        // conservative default
         if (s.contains("here")) return ReqType.TPAHERE;
 
-        // reflectively try to detect
         Object requestObj = getPrimaryRequestObject(event);
         if (requestObj != null) {
             Object type = invokeAny(requestObj, "getType", "type", "getRequestType", "requestType");
@@ -149,7 +151,6 @@ public final class TeleportRequestToggleListener implements Listener {
     }
 
     private Player resolveTargetPlayer(ReceiveTeleportRequestEvent event) {
-        // Most HuskHomes APIs give you the target player directly or via getUser().getUuid()
         Object targetObj = invokeAny(event, "getTarget", "target", "getRecipient", "recipient", "getUser", "user");
         if (targetObj instanceof Player p) return p;
 

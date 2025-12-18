@@ -5,7 +5,7 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class PendingRequests {
 
-    public record Pending(String senderName, ConfirmRequestMenu.RequestType type) {}
+    public record Pending(String senderName, UUID senderUuid, ConfirmRequestMenu.RequestType type) {}
 
     // All pending requests per target: target -> (senderLower -> Pending)
     private static final ConcurrentHashMap<UUID, ConcurrentHashMap<String, Pending>> PENDING = new ConcurrentHashMap<>();
@@ -20,19 +20,24 @@ public final class PendingRequests {
 
     /** Backwards-compatible: used by your listener. Now it ADDS instead of overwriting. */
     public static void set(UUID target, String senderName, ConfirmRequestMenu.RequestType type) {
-        add(target, senderName, type);
+        add(target, senderName, null, type);
+    }
+
+    /** New: include sender UUID when available (for proxy dimension lookups). */
+    public static void set(UUID target, String senderName, UUID senderUuid, ConfirmRequestMenu.RequestType type) {
+        add(target, senderName, senderUuid, type);
     }
 
     /** Add (or update) a pending request for target from sender. */
-    public static void add(UUID target, String senderName, ConfirmRequestMenu.RequestType type) {
+    public static void add(UUID target, String senderName, UUID senderUuid, ConfirmRequestMenu.RequestType type) {
         if (target == null || senderName == null || senderName.isBlank() || type == null) return;
 
         String key = senderName.toLowerCase(Locale.ROOT);
         PENDING.computeIfAbsent(target, u -> new ConcurrentHashMap<>())
-                .put(key, new Pending(senderName, type));
+                .put(key, new Pending(senderName, senderUuid, type));
 
         // update "last" pointer
-        LAST.put(target, new Pending(senderName, type));
+        LAST.put(target, new Pending(senderName, senderUuid, type));
     }
 
     /** Returns the last remembered pending request (for no-arg /tpaccept fallback). */
@@ -106,7 +111,24 @@ public final class PendingRequests {
         return false;
     }
 
-    public static Pending get(UUID target, String senderName) {
+    
+    /** Get the sender UUID for a specific pending request (best effort). */
+    public static UUID getSenderUuid(UUID target, String senderName) {
+        if (target == null || senderName == null || senderName.isBlank()) return null;
+        String key = senderName.toLowerCase(Locale.ROOT);
+        var map = PENDING.get(target);
+        if (map != null) {
+            Pending p = map.get(key);
+            if (p != null) return p.senderUuid();
+        }
+        Pending last = LAST.get(target);
+        if (last != null && last.senderName() != null && last.senderName().equalsIgnoreCase(senderName)) {
+            return last.senderUuid();
+        }
+        return null;
+    }
+
+public static Pending get(UUID target, String senderName) {
         if (target == null || senderName == null || senderName.isBlank()) return null;
         Pending p = LAST.get(target);
         if (p == null || p.senderName() == null) return null;

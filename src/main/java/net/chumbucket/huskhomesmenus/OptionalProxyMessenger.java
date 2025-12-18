@@ -1,6 +1,7 @@
 package net.chumbucket.huskhomesmenus;
 
 import org.bukkit.Bukkit;
+import org.bukkit.World;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.messaging.PluginMessageListener;
@@ -31,6 +32,9 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
     // ✅ One-shot PlayerList ALL callback(s)
     private final List<Consumer<List<String>>> playerListAllCallbacks = Collections.synchronizedList(new ArrayList<>());
 
+    // Dimension response sink (playerName -> dimension)
+    private volatile BiConsumer<String, String> dimensionSink;
+
     public OptionalProxyMessenger(JavaPlugin plugin, HHMConfig config) {
         this.plugin = plugin;
         this.config = config;
@@ -38,6 +42,10 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
 
     public boolean isEnabled() {
         return enabled;
+    }
+
+    public void setDimensionSink(BiConsumer<String, String> sink) {
+        this.dimensionSink = sink;
     }
 
     public void tryEnable() {
@@ -63,7 +71,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
     }
 
     // =========================================================
-    // Existing API
+    // Existing API (unchanged)
     // =========================================================
 
     public boolean messagePlayer(String playerName, String message) {
@@ -84,30 +92,54 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
         }
     }
 
-    public boolean forwardTo(UUID targetUuid, String message) {
+    // =========================================================
+    // ✅ NEW: ForwardToPlayer BY NAME (this is the key fix)
+    // =========================================================
+
+    public boolean forwardSubchannelToPlayerName(String targetPlayerName, String subchannel, byte[] data) {
         if (!enabled) return false;
-        if (targetUuid == null) return false;
+        if (targetPlayerName == null || targetPlayerName.isBlank()) return false;
+        if (subchannel == null || subchannel.isBlank()) return false;
+        if (data == null) data = new byte[0];
 
         try {
             Player carrier = anyOnlinePlayer();
             if (carrier == null) return false;
 
-            ByteArrayOutputStream msgBytes = new ByteArrayOutputStream();
-            DataOutputStream msgOut = new DataOutputStream(msgBytes);
-            msgOut.writeUTF(message == null ? "" : message);
-
-            byte[] forward = buildForwardToPlayerPacket(targetUuid.toString(), SUBCHANNEL, msgBytes.toByteArray());
+            byte[] forward = buildForwardToPlayerPacket(targetPlayerName, subchannel, data);
             carrier.sendPluginMessage(plugin, CHANNEL_MODERN, forward);
             carrier.sendPluginMessage(plugin, CHANNEL_LEGACY, forward);
             return true;
         } catch (Throwable t) {
-            plugin.getLogger().warning("Failed to proxy-forward '" + targetUuid + "': " + t.getMessage());
+            plugin.getLogger().warning("Failed to proxy-forward to '" + targetPlayerName + "': " + t.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Ask a (possibly remote) player what dimension they are in.
+     * The remote backend replies back to requesterName with DIM_RESP(subjectName, dimension).
+     */
+    public boolean requestDimensionByName(String remotePlayerName, String requesterName) {
+        if (!enabled) return false;
+        if (remotePlayerName == null || remotePlayerName.isBlank()) return false;
+        if (requesterName == null || requesterName.isBlank()) return false;
+
+        try {
+            ByteArrayOutputStream payloadBytes = new ByteArrayOutputStream();
+            DataOutputStream out = new DataOutputStream(payloadBytes);
+            out.writeUTF("DIM_REQ");
+            out.writeUTF(requesterName);
+
+            return forwardSubchannelToPlayerName(remotePlayerName, SUBCHANNEL, payloadBytes.toByteArray());
+        } catch (Throwable t) {
+            plugin.getLogger().warning("Failed to request dimension from " + remotePlayerName + ": " + t.getMessage());
             return false;
         }
     }
 
     // =========================================================
-    // API used by ProxyPlayerCache
+    // API used by ProxyPlayerCache (unchanged)
     // =========================================================
 
     public boolean requestProxyServers(Consumer<List<String>> callback) {
@@ -136,7 +168,6 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
             Player carrier = anyOnlinePlayer();
             if (carrier == null) return false;
 
-            // ✅ store callback for this server (one-shot)
             if (callback != null) {
                 perServerPlayerList.put(server.toLowerCase(Locale.ROOT), callback);
             }
@@ -182,11 +213,12 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
         return bytes.toByteArray();
     }
 
-    private byte[] buildForwardToPlayerPacket(String playerUuid, String subchannel, byte[] data) throws IOException {
+    // NOTE: BungeeCord expects PLAYER NAME here for ForwardToPlayer.
+    private byte[] buildForwardToPlayerPacket(String playerName, String subchannel, byte[] data) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream out = new DataOutputStream(bytes);
         out.writeUTF("ForwardToPlayer");
-        out.writeUTF(playerUuid);
+        out.writeUTF(playerName);
         out.writeUTF(subchannel);
         out.writeShort(data.length);
         out.write(data);
@@ -213,6 +245,20 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
         return null;
     }
 
+    private String resolveDimension(Player p) {
+        if (p == null) return "Unknown";
+        World w = p.getWorld();
+        if (w == null) return "Unknown";
+
+        World.Environment env = w.getEnvironment();
+        if (env == World.Environment.NORMAL) return "Overworld";
+        if (env == World.Environment.NETHER) return "Nether";
+        if (env == World.Environment.THE_END) return "The End";
+
+        String name = w.getName();
+        return (name == null || name.isBlank()) ? "Unknown" : name;
+    }
+
     // =========================================================
     // Incoming responses
     // =========================================================
@@ -222,11 +268,49 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
         if (!enabled) return;
         if (message == null || message.length == 0) return;
 
-        // We intentionally do NOT suppress “fast duplicates” — modern+legacy can arrive quickly.
-
         try (DataInputStream in = new DataInputStream(new ByteArrayInputStream(message))) {
             String sub = in.readUTF();
             if (sub == null || sub.isBlank()) return;
+
+            if (SUBCHANNEL.equalsIgnoreCase(sub)) {
+                short len = in.readShort();
+                if (len <= 0) return;
+                byte[] data = new byte[len];
+                in.readFully(data);
+
+                try (DataInputStream din = new DataInputStream(new ByteArrayInputStream(data))) {
+                    String cmd = din.readUTF();
+                    if (cmd == null || cmd.isBlank()) return;
+
+                    if ("DIM_REQ".equalsIgnoreCase(cmd)) {
+                        String requesterName = din.readUTF();
+                        if (requesterName == null || requesterName.isBlank()) return;
+
+                        String dim = resolveDimension(player);
+
+                        ByteArrayOutputStream bout = new ByteArrayOutputStream();
+                        DataOutputStream dout = new DataOutputStream(bout);
+                        dout.writeUTF("DIM_RESP");
+                        dout.writeUTF(player != null ? player.getName() : "");
+                        dout.writeUTF(dim);
+
+                        // Reply back to the requester (by name)
+                        forwardSubchannelToPlayerName(requesterName, SUBCHANNEL, bout.toByteArray());
+                        return;
+                    }
+
+                    if ("DIM_RESP".equalsIgnoreCase(cmd)) {
+                        String name = din.readUTF();
+                        String dim = din.readUTF();
+                        BiConsumer<String, String> sink = this.dimensionSink;
+                        if (sink != null) {
+                            try { sink.accept(name, dim); } catch (Throwable ignored) {}
+                        }
+                        return;
+                    }
+                } catch (Throwable ignored) {}
+                return;
+            }
 
             if ("GetServers".equalsIgnoreCase(sub)) {
                 String csv = in.readUTF();
@@ -245,7 +329,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
             }
 
             if ("PlayerList".equalsIgnoreCase(sub)) {
-                String server = in.readUTF(); // "ALL" or server
+                String server = in.readUTF();
                 String csv = in.readUTF();
                 List<String> names = parseCsv(csv);
 
@@ -261,7 +345,6 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
                     return;
                 }
 
-                // ✅ only consume the callback for THIS server
                 String key = server.toLowerCase(Locale.ROOT);
                 BiConsumer<String, List<String>> cb = perServerPlayerList.remove(key);
                 if (cb != null) {

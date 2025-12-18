@@ -21,13 +21,16 @@ public final class HuskHomesMenus extends JavaPlugin {
         this.messenger = new OptionalProxyMessenger(this, config);
         this.messenger.tryEnable();
 
-        // Proxy cache (tab completion + REGION mapping)
+        // Proxy cache (tab completion + REGION mapping + dimension cache)
         ProxyPlayerCache playerCache = new ProxyPlayerCache(this, config, messenger);
         playerCache.start();
 
+        // ✅ Wire remote dimension responses into the cache
+        this.messenger.setDimensionSink(playerCache::setRemoteDimension);
+
         // Menu
         ConfirmRequestMenu confirmMenu = new ConfirmRequestMenu(this, config, playerCache);
-        Bukkit.getPluginManager().registerEvents(confirmMenu, this); // register menu click/drag listener
+        Bukkit.getPluginManager().registerEvents(confirmMenu, this);
         Bukkit.getPluginManager().registerEvents(new TeleportCommandInterceptListener(confirmMenu, config), this);
 
         // Commands

@@ -5,6 +5,7 @@ net\chumbucket\huskhomesmenus\TeleportCommandInterceptListener.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$ConfirmHolder.class
 net\chumbucket\huskhomesmenus\HuskHomesMenus.class
 net\chumbucket\huskhomesmenus\ProxyPlayerCache$1.class
+net\chumbucket\huskhomesmenus\ConfirmRequestMenu$3.class
 net\chumbucket\huskhomesmenus\OptionalProxyMessenger.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$RequestType.class
 net\chumbucket\huskhomesmenus\TpDenyCommand.class
