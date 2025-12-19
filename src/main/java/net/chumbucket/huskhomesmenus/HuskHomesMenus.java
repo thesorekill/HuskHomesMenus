@@ -25,9 +25,6 @@ public final class HuskHomesMenus extends JavaPlugin {
         ProxyPlayerCache playerCache = new ProxyPlayerCache(this, config, messenger);
         playerCache.start();
 
-        // ✅ Wire remote dimension responses into the cache
-        this.messenger.setDimensionSink(playerCache::setRemoteDimension);
-
         // Menu
         ConfirmRequestMenu confirmMenu = new ConfirmRequestMenu(this, config, playerCache);
         Bukkit.getPluginManager().registerEvents(confirmMenu, this);

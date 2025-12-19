@@ -18,6 +18,7 @@ net\chumbucket\huskhomesmenus\ProxyTabCompleter.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$2.class
 net\chumbucket\huskhomesmenus\ProxyPlayerCache.class
 net\chumbucket\huskhomesmenus\TeleportRequestToggleListener$ReqType.class
+net\chumbucket\huskhomesmenus\OptionalProxyMessenger$DimResponse.class
 net\chumbucket\huskhomesmenus\TeleportRequestToggleListener.class
 net\chumbucket\huskhomesmenus\ToggleManager.class
 net\chumbucket\huskhomesmenus\HHMConfig.class

@@ -6,6 +6,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 public final class ProxyPlayerCache {
 
@@ -16,10 +17,13 @@ public final class ProxyPlayerCache {
     private volatile List<String> cached = List.of();
     private final Map<String, String> playerToServer = new ConcurrentHashMap<>();
 
-    // ✅ dimension cache (normalizedName -> "Overworld"/"Nether"/"The End"/etc)
+    // ✅ dimension cache
     private final Map<String, String> playerToDimension = new ConcurrentHashMap<>();
     private final Map<String, Long> dimUpdatedMs = new ConcurrentHashMap<>();
+
+    // request tracking
     private final Map<String, Long> dimReqMs = new ConcurrentHashMap<>();
+    private final Map<String, Long> dimLatestRequestId = new ConcurrentHashMap<>();
 
     private volatile long lastRefreshMs = 0L;
     private volatile long negativeUntilMs = 0L;
@@ -29,10 +33,14 @@ public final class ProxyPlayerCache {
         this.plugin = plugin;
         this.config = config;
         this.messenger = messenger;
+
+        // ✅ hook DIM_RESP into this cache
+        if (this.messenger != null) {
+            this.messenger.setDimensionSink(this::onDimResponse);
+        }
     }
 
     public void start() {
-        // prime quickly
         Bukkit.getScheduler().runTaskLater(plugin, this::refreshAsyncish, 20L);
     }
 
@@ -47,29 +55,44 @@ public final class ProxyPlayerCache {
         return playerToServer.get(normalize(playerName));
     }
 
+    public String getServerForFresh(String playerName) {
+        if (playerName == null) return null;
+
+        long now = System.currentTimeMillis();
+        long ttlMs = Math.max(2000L, plugin.getConfig().getLong("cache.region_ttl_millis", 15000L));
+
+        if (lastRefreshMs > 0 && (now - lastRefreshMs) <= ttlMs) {
+            return getServerFor(playerName);
+        }
+
+        refreshAsyncish();
+        return null;
+    }
+
     // =========================================================
-    // ✅ Dimension API
+    // ✅ Dimension API (nonce-guarded)
     // =========================================================
 
-    public void setRemoteDimension(String playerName, String dimension) {
-        String key = normalize(playerName);
+    private void onDimResponse(OptionalProxyMessenger.DimResponse resp) {
+        if (resp == null) return;
+
+        String key = normalize(resp.playerName);
         if (key == null) return;
 
-        String dim = (dimension == null || dimension.isBlank()) ? "Unknown" : dimension.trim();
+        long incomingId = resp.requestId;
+        Long latest = dimLatestRequestId.get(key);
+
+        // If we have a latest requestId, ignore out-of-order replies.
+        // If requestId==0 (old backend), accept it.
+        if (incomingId != 0L && latest != null && incomingId != latest) {
+            return;
+        }
+
+        String dim = (resp.dimension == null || resp.dimension.isBlank()) ? "Unknown" : resp.dimension.trim();
         playerToDimension.put(key, dim);
         dimUpdatedMs.put(key, System.currentTimeMillis());
     }
 
-    public String getDimensionFor(String playerName) {
-        String key = normalize(playerName);
-        if (key == null) return null;
-        return playerToDimension.get(key);
-    }
-
-    /**
-     * Returns a cached dimension if present; otherwise triggers a remote request and returns "Loading...".
-     * requesterName is the local viewer who will receive DIM_RESP back.
-     */
     public String getOrRequestDimension(String subjectName, String requesterName) {
         if (!config.proxyEnabled()) return "Unknown";
         if (messenger == null || !messenger.isEnabled()) return "Unknown";
@@ -81,20 +104,29 @@ public final class ProxyPlayerCache {
 
         long now = System.currentTimeMillis();
 
-        // TTL for dimension cache (default 15s)
-        long ttlMs = Math.max(2000L, plugin.getConfig().getLong("cache.dimension_ttl_millis", 15000L));
+        long ttlMs = Math.max(500L, plugin.getConfig().getLong("cache.dimension_ttl_millis", 3000L));
         Long updated = dimUpdatedMs.get(key);
+
         if (updated != null && (now - updated) <= ttlMs) {
             String dim = playerToDimension.get(key);
-            return (dim == null || dim.isBlank()) ? "Unknown" : dim;
+            if (dim != null && !dim.isBlank() && !"Unknown".equalsIgnoreCase(dim)) return dim;
         }
 
-        // request cooldown per subject (default 1.5s)
-        long cooldownMs = Math.max(500L, plugin.getConfig().getLong("cache.dimension_request_cooldown_millis", 1500L));
+        return requestAndLoading(subjectName, requesterName, key, now);
+    }
+
+    private String requestAndLoading(String subjectName, String requesterName, String key, long now) {
+        long cooldownMs = Math.max(200L, plugin.getConfig().getLong("cache.dimension_request_cooldown_millis", 500L));
         Long lastReq = dimReqMs.get(key);
+
         if (lastReq == null || (now - lastReq) >= cooldownMs) {
             dimReqMs.put(key, now);
-            messenger.requestDimensionByName(subjectName, requesterName);
+
+            // ✅ new nonce per request; store as “latest”
+            long requestId = (System.nanoTime() ^ (now << 1)) & Long.MAX_VALUE;
+            dimLatestRequestId.put(key, requestId);
+
+            messenger.requestDimensionByName(subjectName, requesterName, requestId);
         }
 
         return "Loading...";
@@ -107,7 +139,7 @@ public final class ProxyPlayerCache {
     }
 
     // =========================================================
-    // Existing region cache logic (unchanged)
+    // Existing region cache logic
     // =========================================================
 
     private boolean isStale() {

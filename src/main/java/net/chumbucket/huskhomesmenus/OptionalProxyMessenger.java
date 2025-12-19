@@ -26,14 +26,26 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
     // One-shot GetServers callbacks
     private final List<Consumer<List<String>>> getServersCallbacks = Collections.synchronizedList(new ArrayList<>());
 
-    // ✅ Per-server one-shot callbacks (serverLower -> callback)
+    // Per-server one-shot callbacks (serverLower -> callback)
     private final ConcurrentHashMap<String, BiConsumer<String, List<String>>> perServerPlayerList = new ConcurrentHashMap<>();
 
-    // ✅ One-shot PlayerList ALL callback(s)
+    // One-shot PlayerList ALL callback(s)
     private final List<Consumer<List<String>>> playerListAllCallbacks = Collections.synchronizedList(new ArrayList<>());
 
-    // Dimension response sink (playerName -> dimension)
-    private volatile BiConsumer<String, String> dimensionSink;
+    // ✅ Dimension response sink
+    public static final class DimResponse {
+        public final String playerName;
+        public final String dimension;
+        public final long requestId;
+
+        public DimResponse(String playerName, String dimension, long requestId) {
+            this.playerName = playerName;
+            this.dimension = dimension;
+            this.requestId = requestId;
+        }
+    }
+
+    private volatile Consumer<DimResponse> dimensionSink;
 
     public OptionalProxyMessenger(JavaPlugin plugin, HHMConfig config) {
         this.plugin = plugin;
@@ -44,7 +56,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
         return enabled;
     }
 
-    public void setDimensionSink(BiConsumer<String, String> sink) {
+    public void setDimensionSink(Consumer<DimResponse> sink) {
         this.dimensionSink = sink;
     }
 
@@ -71,7 +83,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
     }
 
     // =========================================================
-    // Existing API (unchanged)
+    // Existing API
     // =========================================================
 
     public boolean messagePlayer(String playerName, String message) {
@@ -93,7 +105,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
     }
 
     // =========================================================
-    // ✅ NEW: ForwardToPlayer BY NAME (this is the key fix)
+    // ForwardToPlayer by NAME
     // =========================================================
 
     public boolean forwardSubchannelToPlayerName(String targetPlayerName, String subchannel, byte[] data) {
@@ -118,9 +130,9 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
 
     /**
      * Ask a (possibly remote) player what dimension they are in.
-     * The remote backend replies back to requesterName with DIM_RESP(subjectName, dimension).
+     * The remote backend replies back to requesterName with DIM_RESP(subjectName, dimension, requestId).
      */
-    public boolean requestDimensionByName(String remotePlayerName, String requesterName) {
+    public boolean requestDimensionByName(String remotePlayerName, String requesterName, long requestId) {
         if (!enabled) return false;
         if (remotePlayerName == null || remotePlayerName.isBlank()) return false;
         if (requesterName == null || requesterName.isBlank()) return false;
@@ -130,6 +142,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
             DataOutputStream out = new DataOutputStream(payloadBytes);
             out.writeUTF("DIM_REQ");
             out.writeUTF(requesterName);
+            out.writeLong(requestId);
 
             return forwardSubchannelToPlayerName(remotePlayerName, SUBCHANNEL, payloadBytes.toByteArray());
         } catch (Throwable t) {
@@ -139,7 +152,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
     }
 
     // =========================================================
-    // API used by ProxyPlayerCache (unchanged)
+    // API used by ProxyPlayerCache
     // =========================================================
 
     public boolean requestProxyServers(Consumer<List<String>> callback) {
@@ -213,7 +226,6 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
         return bytes.toByteArray();
     }
 
-    // NOTE: BungeeCord expects PLAYER NAME here for ForwardToPlayer.
     private byte[] buildForwardToPlayerPacket(String playerName, String subchannel, byte[] data) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream out = new DataOutputStream(bytes);
@@ -286,6 +298,9 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
                         String requesterName = din.readUTF();
                         if (requesterName == null || requesterName.isBlank()) return;
 
+                        long requestId = 0L;
+                        try { requestId = din.readLong(); } catch (EOFException ignored) { /* old format */ }
+
                         String dim = resolveDimension(player);
 
                         ByteArrayOutputStream bout = new ByteArrayOutputStream();
@@ -293,8 +308,8 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
                         dout.writeUTF("DIM_RESP");
                         dout.writeUTF(player != null ? player.getName() : "");
                         dout.writeUTF(dim);
+                        dout.writeLong(requestId);
 
-                        // Reply back to the requester (by name)
                         forwardSubchannelToPlayerName(requesterName, SUBCHANNEL, bout.toByteArray());
                         return;
                     }
@@ -302,9 +317,13 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
                     if ("DIM_RESP".equalsIgnoreCase(cmd)) {
                         String name = din.readUTF();
                         String dim = din.readUTF();
-                        BiConsumer<String, String> sink = this.dimensionSink;
-                        if (sink != null) {
-                            try { sink.accept(name, dim); } catch (Throwable ignored) {}
+
+                        long requestId = 0L;
+                        try { requestId = din.readLong(); } catch (EOFException ignored) { /* old format */ }
+
+                        Consumer<DimResponse> sink = this.dimensionSink;
+                        if (sink != null && name != null && !name.isBlank()) {
+                            try { sink.accept(new DimResponse(name, dim, requestId)); } catch (Throwable ignored) {}
                         }
                         return;
                     }

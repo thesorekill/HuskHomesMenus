@@ -22,7 +22,6 @@ public final class ConfirmRequestMenu implements Listener {
     private final HHMConfig config;
     private final ProxyPlayerCache playerCache;
 
-    // ✅ PDC keys so we can swap material later after remote dimension arrives
     private final NamespacedKey KEY_DIM_ITEM;
     private final NamespacedKey KEY_DIM_OVERWORLD;
     private final NamespacedKey KEY_DIM_NETHER;
@@ -52,8 +51,10 @@ public final class ConfirmRequestMenu implements Listener {
         ConfirmHolder holder = new ConfirmHolder(senderName, type);
         Inventory inv = Bukkit.createInventory(holder, rows * 9, title);
 
-        String region = resolveRegion(senderName);
-        String dimension = resolveDimension(target, senderName);
+        boolean senderLocal = (senderName != null && Bukkit.getPlayerExact(senderName) != null);
+
+        String region = resolveRegion(senderName, senderLocal);
+        String dimension = resolveDimension(target, senderName, senderLocal);
 
         // filler
         boolean useFiller = menu.getBoolean("use_filler", false);
@@ -69,6 +70,7 @@ public final class ConfirmRequestMenu implements Listener {
         List<Integer> regionSlots = new ArrayList<>();
         List<Integer> dimensionSlots = new ArrayList<>();
         List<Map<?, ?>> items = menu.getMapList("items");
+
         for (Map<?, ?> itemMap : items) {
             int slot = mapGetInt(itemMap, "slot", -1);
             if (slot < 0 || slot >= inv.getSize()) continue;
@@ -83,14 +85,14 @@ public final class ConfirmRequestMenu implements Listener {
 
             ItemStack built = switch (itemType.toUpperCase(Locale.ROOT)) {
                 case "PLAYER_HEAD" -> buildPlayerHead(itemMap, target, senderName, dimension, region);
-                case "DIMENSION_ITEM" -> buildDimensionItem(itemMap, senderName, dimension, region); // ✅ now stores PDC
+                case "DIMENSION_ITEM" -> buildDimensionItem(itemMap, senderName, dimension, region);
                 default -> buildGenericItem(itemMap, senderName, dimension, region);
             };
 
             inv.setItem(slot, built);
         }
 
-        // deny (CANCEL)
+        // deny
         ConfigurationSection deny = menu.getConfigurationSection("deny");
         if (deny != null) {
             int slot = deny.getInt("slot", -1);
@@ -101,7 +103,7 @@ public final class ConfirmRequestMenu implements Listener {
             if (slot >= 0 && slot < inv.getSize()) inv.setItem(slot, item);
         }
 
-        // accept (CONFIRM)
+        // accept
         ConfigurationSection accept = menu.getConfigurationSection("accept");
         if (accept != null) {
             int slot = accept.getInt("slot", -1);
@@ -114,14 +116,18 @@ public final class ConfirmRequestMenu implements Listener {
 
         target.openInventory(inv);
 
-        // existing region refresh behavior
-        if (config.proxyEnabled() && playerCache != null && !regionSlots.isEmpty() && "Loading...".equalsIgnoreCase(region)) {
-            scheduleRegionRefresh(target, inv, senderName, regionSlots);
+        // ✅ Region refresh: for REMOTE senders, if we have placeholders and region not known yet
+        if (config.proxyEnabled() && playerCache != null && !senderLocal && !regionSlots.isEmpty()) {
+            if ("Loading...".equalsIgnoreCase(region) || region == null || region.isBlank() || "Unknown".equalsIgnoreCase(region)) {
+                scheduleRegionRefresh(target, inv, senderName, regionSlots);
+            }
         }
 
-        // ✅ dimension refresh
-        if (config.proxyEnabled() && playerCache != null && !dimensionSlots.isEmpty() && "Loading...".equalsIgnoreCase(dimension)) {
-            scheduleDimensionRefresh(target, inv, senderName, dimensionSlots);
+        // ✅ Dimension refresh: for REMOTE senders, if we have placeholders (always safe)
+        if (config.proxyEnabled() && playerCache != null && !senderLocal && !dimensionSlots.isEmpty()) {
+            if ("Loading...".equalsIgnoreCase(dimension) || dimension == null || dimension.isBlank() || "Unknown".equalsIgnoreCase(dimension)) {
+                scheduleDimensionRefresh(target, inv, senderName, dimensionSlots);
+            }
         }
     }
 
@@ -166,7 +172,7 @@ public final class ConfirmRequestMenu implements Listener {
                 if (viewer == null || !viewer.isOnline()) { cancel(); return; }
                 if (viewer.getOpenInventory() == null || viewer.getOpenInventory().getTopInventory() != inv) { cancel(); return; }
 
-                String srv = playerCache.getServerFor(senderName);
+                String srv = playerCache.getServerForFresh(senderName);
                 if (srv != null && !srv.isBlank()) {
                     updateRegionSlots(inv, regionSlots, srv.trim());
                     cancel();
@@ -192,8 +198,8 @@ public final class ConfirmRequestMenu implements Listener {
                 if (viewer == null || !viewer.isOnline()) { cancel(); return; }
                 if (viewer.getOpenInventory() == null || viewer.getOpenInventory().getTopInventory() != inv) { cancel(); return; }
 
-                String dim = playerCache.getDimensionFor(senderName);
-                if (dim != null && !dim.isBlank()) {
+                String dim = playerCache.getOrRequestDimension(senderName, viewer.getName());
+                if (dim != null && !dim.isBlank() && !"Loading...".equalsIgnoreCase(dim) && !"Unknown".equalsIgnoreCase(dim)) {
                     updateDimensionSlots(inv, dimensionSlots, dim);
                     cancel();
                     return;
@@ -207,10 +213,6 @@ public final class ConfirmRequestMenu implements Listener {
         }.runTaskTimer(plugin, 2L, 2L);
     }
 
-    /**
-     * ✅ Updates %dimension_name% and ALSO swaps the item material for DIMENSION_ITEMs
-     * based on the three materials stored in PDC.
-     */
     private void updateDimensionSlots(Inventory inv, List<Integer> slots, String dimensionValue) {
         for (Integer slot : slots) {
             if (slot == null) continue;
@@ -222,7 +224,6 @@ public final class ConfirmRequestMenu implements Listener {
             ItemMeta curMeta = current.getItemMeta();
             if (curMeta == null) continue;
 
-            // Replace placeholders in name/lore
             ItemStack updatedStack = current.clone();
             ItemMeta meta = updatedStack.getItemMeta();
             if (meta == null) continue;
@@ -247,7 +248,6 @@ public final class ConfirmRequestMenu implements Listener {
                 meta.setLore(newLore);
             }
 
-            // ✅ If this is a DIMENSION_ITEM, swap material based on stored config materials
             PersistentDataContainer pdc = meta.getPersistentDataContainer();
             boolean isDimItem = pdc.has(KEY_DIM_ITEM, PersistentDataType.BYTE);
 
@@ -255,7 +255,7 @@ public final class ConfirmRequestMenu implements Listener {
                 Material newMat = pickDimensionMaterialFromPdc(meta, safeDim);
                 if (newMat != null && newMat != updatedStack.getType()) {
                     ItemStack swapped = new ItemStack(newMat, updatedStack.getAmount());
-                    swapped.setItemMeta(meta); // meta already contains PDC + updated text
+                    swapped.setItemMeta(meta);
                     inv.setItem(slot, swapped);
                     continue;
                 }
@@ -295,7 +295,7 @@ public final class ConfirmRequestMenu implements Listener {
             if (meta == null) continue;
 
             if (meta.hasDisplayName()) {
-                meta.setDisplayName(meta.getDisplayName().replace("Loading...", regionValue));
+                meta.setDisplayName(meta.getDisplayName().replace("Loading...", regionValue).replace("%region%", regionValue));
             }
             List<String> lore = meta.getLore();
             if (lore != null && !lore.isEmpty()) {
@@ -313,7 +313,7 @@ public final class ConfirmRequestMenu implements Listener {
     }
 
     // ---------------------------
-    // Click + Drag handling (prevents taking items)
+    // Click + Drag handling
     // ---------------------------
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onClick(InventoryClickEvent e) {
@@ -474,7 +474,6 @@ public final class ConfirmRequestMenu implements Listener {
             else if (env == World.Environment.THE_END) mat = materialOr(Material.END_STONE, endMat);
             else mat = materialOr(Material.GRASS_BLOCK, overworldMat);
         } else {
-            // remote: choose based on dimension string if known; otherwise default overworld icon
             String d = (dimension == null) ? "" : dimension.toLowerCase(Locale.ROOT);
             if (d.contains("nether")) mat = materialOr(Material.NETHERRACK, netherMat);
             else if (d.contains("end")) mat = materialOr(Material.END_STONE, endMat);
@@ -487,7 +486,6 @@ public final class ConfirmRequestMenu implements Listener {
         ItemStack it = new ItemStack(mat);
         ItemMeta meta = it.getItemMeta();
         if (meta != null) {
-            // ✅ mark as dimension item and store configured materials for later refresh swap
             PersistentDataContainer pdc = meta.getPersistentDataContainer();
             pdc.set(KEY_DIM_ITEM, PersistentDataType.BYTE, (byte) 1);
             pdc.set(KEY_DIM_OVERWORLD, PersistentDataType.STRING, overworldMat);
@@ -559,31 +557,38 @@ public final class ConfirmRequestMenu implements Listener {
     }
 
     // ---------------------------
-    // Region + dimension resolution
+    // Region + dimension resolution (FIXED)
     // ---------------------------
-    private String resolveRegion(String senderName) {
+    private String resolveRegion(String senderName, boolean senderLocal) {
         if (!config.proxyEnabled()) return "Local";
+        if (senderLocal) return "Local";
 
-        String srv = (playerCache != null) ? playerCache.getServerFor(senderName) : null;
-        if (srv != null && !srv.isBlank()) return srv;
+        if (playerCache == null) return "Loading...";
 
-        return "Local";
+        // ✅ fresh-only lookup; prevents old/wrong region flashes
+        String srv = playerCache.getServerForFresh(senderName);
+        if (srv != null && !srv.isBlank()) return srv.trim();
+
+        return "Loading...";
     }
 
-    private String resolveDimension(Player target, String senderName) {
-        Player sender = (senderName != null) ? Bukkit.getPlayerExact(senderName) : null;
-        if (sender != null) {
-            World.Environment env = sender.getWorld().getEnvironment();
-            return switch (env) {
-                case NETHER -> "Nether";
-                case THE_END -> "The End";
-                default -> "Overworld";
-            };
+    private String resolveDimension(Player target, String senderName, boolean senderLocal) {
+        if (senderLocal) {
+            Player sender = (senderName != null) ? Bukkit.getPlayerExact(senderName) : null;
+            if (sender != null) {
+                World.Environment env = sender.getWorld().getEnvironment();
+                return switch (env) {
+                    case NETHER -> "Nether";
+                    case THE_END -> "The End";
+                    default -> "Overworld";
+                };
+            }
+            return "Overworld";
         }
 
         if (config.proxyEnabled() && playerCache != null && target != null) {
-            String dim = playerCache.getOrRequestDimension(senderName, target.getName());
-            if (dim != null && !dim.isBlank()) return dim;
+            // ✅ menu-safe: returns Loading... if stale/missing
+            return playerCache.getOrRequestDimension(senderName, target.getName());
         }
 
         return "Unknown";
