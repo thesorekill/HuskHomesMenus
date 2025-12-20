@@ -22,10 +22,10 @@ Whether you run a single survival server or a multi-server proxy network, HuskHo
 ## Requirements
 
 - Java 21
-- Paper (or compatible forks)
+- Paper or Spigot 1.21.x (or compatible forks)
 - HuskHomes (required dependency)
 - (Optional) Velocity or BungeeCord for proxy support
-- (Optional) PlaceholderAPI
+- (Optional) PlaceholderAPI 2.11.0+
 
 ## Installation
 
@@ -66,6 +66,37 @@ All permissions default to **false** unless otherwise noted and are intended for
 | `huskhomesmenus.*` | Grants all HuskHomesMenus permissions | op |
 
 > **Note:** By default, players must be explicitly granted permissions to send **and accept** teleport requests.
+
+## Placeholders
+
+HuskHomesMenus includes a built-in PlaceholderAPI expansion. No eCloud download is required.
+
+Requires PlaceholderAPI **2.11.0+**.
+
+| Category | Placeholder | Description |
+|----------|-------------|-------------|
+| Boolean | `%huskhomesmenus_tpa%` | Returns whether `/tpa` requests are enabled |
+| Boolean | `%huskhomesmenus_tpahere%` | Returns whether `/tpahere` requests are enabled |
+| Boolean | `%huskhomesmenus_tpmenu%` | Returns whether the teleport menu is enabled |
+| Boolean | `%huskhomesmenus_tpauto%` | Returns whether auto-accept is enabled |
+
+| Text | `%huskhomesmenus_tpa_text%` | Returns `ON` or `OFF` for `/tpa` |
+| Text | `%huskhomesmenus_tpahere_text%` | Returns `ON` or `OFF` for `/tpahere` |
+| Text | `%huskhomesmenus_tpmenu_text%` | Returns `ON` or `OFF` for the teleport menu |
+| Text | `%huskhomesmenus_tpauto_text%` | Returns `ON` or `OFF` for auto-accept |
+
+| Icon | `%huskhomesmenus_tpa_icon%` | Returns ✔ or ✘ for `/tpa` |
+| Icon | `%huskhomesmenus_tpahere_icon%` | Returns ✔ or ✘ for `/tpahere` |
+| Icon | `%huskhomesmenus_tpmenu_icon%` | Returns ✔ or ✘ for the teleport menu |
+| Icon | `%huskhomesmenus_tpauto_icon%` | Returns ✔ or ✘ for auto-accept |
+
+| Pretty | `%huskhomesmenus_tpa_pretty%` | Colored status for `/tpa` |
+| Pretty | `%huskhomesmenus_tpahere_pretty%` | Colored status for `/tpahere` |
+| Pretty | `%huskhomesmenus_tpmenu_pretty%` | Colored status for the teleport menu |
+| Pretty | `%huskhomesmenus_tpauto_pretty%` | Colored status for auto-accept |
+
+| Combined | `%huskhomesmenus_requests_pretty%` | Combined `/tpa` and `/tpahere` status |
+| Combined | `%huskhomesmenus_all_pretty%` | Combined status of all teleport settings |
 
 ## Configuration
 
