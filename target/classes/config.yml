@@ -46,6 +46,9 @@
 #     -> "TPA: ON/OFF | TPAHERE: ON/OFF" (with colors)
 #
 
+# Name of the server (if proxy enabled it should match the proxy name)
+backend_name: hub
+
 # Whether to log extra debugging info (recommended OFF unless testing)
 debug: false
 

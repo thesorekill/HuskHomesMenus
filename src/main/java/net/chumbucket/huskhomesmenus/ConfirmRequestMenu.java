@@ -12,6 +12,8 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitRunnable;
 
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.*;
 
 public final class ConfirmRequestMenu implements Listener {
@@ -69,6 +71,8 @@ public final class ConfirmRequestMenu implements Listener {
         // items
         List<Integer> regionSlots = new ArrayList<>();
         List<Integer> dimensionSlots = new ArrayList<>();
+        List<Integer> headSlotsToRefresh = new ArrayList<>();
+
         List<Map<?, ?>> items = menu.getMapList("items");
 
         for (Map<?, ?> itemMap : items) {
@@ -90,6 +94,25 @@ public final class ConfirmRequestMenu implements Listener {
             };
 
             inv.setItem(slot, built);
+
+            // If this is a sender head and sender is remote, refresh later if skin isn't ready yet
+            if ("PLAYER_HEAD".equalsIgnoreCase(itemType) && config.proxyEnabled() && !senderLocal) {
+                String headOf = mapGetString(itemMap, "head_of", "SENDER").toUpperCase(Locale.ROOT);
+                if ("SENDER".equals(headOf) || "NAME".equals(headOf)) {
+                    String ownerName = switch (headOf) {
+                        case "NAME" -> mapGetString(itemMap, "head_name", senderName);
+                        default -> senderName;
+                    };
+
+                    PendingRequests.Skin skin = (ownerName != null && target != null)
+                            ? PendingRequests.getSkin(target.getUniqueId(), ownerName)
+                            : null;
+
+                    if (skin == null || skin.value() == null || skin.value().isBlank()) {
+                        headSlotsToRefresh.add(slot);
+                    }
+                }
+            }
         }
 
         // deny
@@ -116,18 +139,23 @@ public final class ConfirmRequestMenu implements Listener {
 
         target.openInventory(inv);
 
-        // ✅ Region refresh: for REMOTE senders, if we have placeholders and region not known yet
+        // Region refresh
         if (config.proxyEnabled() && playerCache != null && !senderLocal && !regionSlots.isEmpty()) {
             if ("Loading...".equalsIgnoreCase(region) || region == null || region.isBlank() || "Unknown".equalsIgnoreCase(region)) {
                 scheduleRegionRefresh(target, inv, senderName, regionSlots);
             }
         }
 
-        // ✅ Dimension refresh: for REMOTE senders, if we have placeholders (always safe)
+        // Dimension refresh
         if (config.proxyEnabled() && playerCache != null && !senderLocal && !dimensionSlots.isEmpty()) {
             if ("Loading...".equalsIgnoreCase(dimension) || dimension == null || dimension.isBlank() || "Unknown".equalsIgnoreCase(dimension)) {
                 scheduleDimensionRefresh(target, inv, senderName, dimensionSlots);
             }
+        }
+
+        // Head refresh
+        if (config.proxyEnabled() && !senderLocal && !headSlotsToRefresh.isEmpty()) {
+            scheduleHeadRefresh(target, inv, senderName, headSlotsToRefresh);
         }
     }
 
@@ -175,12 +203,14 @@ public final class ConfirmRequestMenu implements Listener {
                 String srv = playerCache.getServerForFresh(senderName);
                 if (srv != null && !srv.isBlank()) {
                     updateRegionSlots(inv, regionSlots, srv.trim());
+                    try { viewer.updateInventory(); } catch (Throwable ignored) {}
                     cancel();
                     return;
                 }
 
                 if (tries >= 20) {
                     updateRegionSlots(inv, regionSlots, "Offline");
+                    try { viewer.updateInventory(); } catch (Throwable ignored) {}
                     cancel();
                 }
             }
@@ -201,14 +231,65 @@ public final class ConfirmRequestMenu implements Listener {
                 String dim = playerCache.getOrRequestDimension(senderName, viewer.getName());
                 if (dim != null && !dim.isBlank() && !"Loading...".equalsIgnoreCase(dim) && !"Unknown".equalsIgnoreCase(dim)) {
                     updateDimensionSlots(inv, dimensionSlots, dim);
+                    try { viewer.updateInventory(); } catch (Throwable ignored) {}
                     cancel();
                     return;
                 }
 
                 if (tries >= 20) {
                     updateDimensionSlots(inv, dimensionSlots, "Unknown");
+                    try { viewer.updateInventory(); } catch (Throwable ignored) {}
                     cancel();
                 }
+            }
+        }.runTaskTimer(plugin, 2L, 2L);
+    }
+
+    private void scheduleHeadRefresh(Player viewer, Inventory inv, String senderName, List<Integer> headSlots) {
+        new BukkitRunnable() {
+            int tries = 0;
+
+            @Override
+            public void run() {
+                tries++;
+
+                if (viewer == null || !viewer.isOnline()) { cancel(); return; }
+                if (viewer.getOpenInventory() == null || viewer.getOpenInventory().getTopInventory() != inv) { cancel(); return; }
+
+                PendingRequests.Skin skin = PendingRequests.getSkin(viewer.getUniqueId(), senderName);
+                if (skin != null && skin.value() != null && !skin.value().isBlank()) {
+                    for (Integer slot : headSlots) {
+                        if (slot == null) continue;
+                        if (slot < 0 || slot >= inv.getSize()) continue;
+
+                        ItemStack it = inv.getItem(slot);
+                        if (it == null || it.getType() != Material.PLAYER_HEAD) continue;
+
+                        ItemMeta im = it.getItemMeta();
+                        if (!(im instanceof SkullMeta)) continue;
+
+                        ItemStack clone = it.clone();
+                        SkullMeta meta = (SkullMeta) clone.getItemMeta();
+                        if (meta == null) continue;
+
+                        boolean ok = applyTexturesToSkull(meta, senderName, skin.value(), skin.signature());
+                        if (config.debug()) {
+                            plugin.getLogger().info("[HHM] applyTexturesToSkull(slot=" + slot + ", owner=" + senderName + ") ok=" + ok
+                                    + " valueLen=" + skin.value().length());
+                        }
+
+                        if (ok) {
+                            clone.setItemMeta(meta);
+                            inv.setItem(slot, clone);
+                        }
+                    }
+
+                    try { viewer.updateInventory(); } catch (Throwable ignored) {}
+                    cancel();
+                    return;
+                }
+
+                if (tries >= 20) cancel();
             }
         }.runTaskTimer(plugin, 2L, 2L);
     }
@@ -295,14 +376,18 @@ public final class ConfirmRequestMenu implements Listener {
             if (meta == null) continue;
 
             if (meta.hasDisplayName()) {
-                meta.setDisplayName(meta.getDisplayName().replace("Loading...", regionValue).replace("%region%", regionValue));
+                meta.setDisplayName(meta.getDisplayName()
+                        .replace("Loading...", regionValue)
+                        .replace("%region%", regionValue));
             }
             List<String> lore = meta.getLore();
             if (lore != null && !lore.isEmpty()) {
                 List<String> newLore = new ArrayList<>(lore.size());
                 for (String line : lore) {
                     if (line == null) newLore.add(null);
-                    else newLore.add(line.replace("Loading...", regionValue).replace("%region%", regionValue));
+                    else newLore.add(line
+                            .replace("Loading...", regionValue)
+                            .replace("%region%", regionValue));
                 }
                 meta.setLore(newLore);
             }
@@ -448,9 +533,21 @@ public final class ConfirmRequestMenu implements Listener {
         ItemStack skull = new ItemStack(Material.PLAYER_HEAD);
         ItemMeta meta0 = skull.getItemMeta();
         if (meta0 instanceof SkullMeta meta) {
+
             if (ownerName != null && !ownerName.isBlank()) {
                 Player owner = Bukkit.getPlayerExact(ownerName);
-                if (owner != null) meta.setOwningPlayer(owner);
+                if (owner != null) {
+                    meta.setOwningPlayer(owner);
+                } else if (config.proxyEnabled() && viewer != null) {
+                    PendingRequests.Skin skin = PendingRequests.getSkin(viewer.getUniqueId(), ownerName);
+                    if (skin != null && skin.value() != null && !skin.value().isBlank()) {
+                        boolean ok = applyTexturesToSkull(meta, ownerName, skin.value(), skin.signature());
+                        if (config.debug()) {
+                            plugin.getLogger().info("[HHM] buildPlayerHead applyTexturesToSkull(owner=" + ownerName + ") ok=" + ok
+                                    + " valueLen=" + skin.value().length());
+                        }
+                    }
+                }
             }
 
             meta.setDisplayName(apply(name, senderName, dimension, region));
@@ -557,15 +654,14 @@ public final class ConfirmRequestMenu implements Listener {
     }
 
     // ---------------------------
-    // Region + dimension resolution (FIXED)
+    // Region + dimension resolution
     // ---------------------------
     private String resolveRegion(String senderName, boolean senderLocal) {
-        if (!config.proxyEnabled()) return "Local";
-        if (senderLocal) return "Local";
+        if (!config.proxyEnabled()) return config.backendName();
+        if (senderLocal) return config.backendName();
 
         if (playerCache == null) return "Loading...";
 
-        // ✅ fresh-only lookup; prevents old/wrong region flashes
         String srv = playerCache.getServerForFresh(senderName);
         if (srv != null && !srv.isBlank()) return srv.trim();
 
@@ -587,11 +683,160 @@ public final class ConfirmRequestMenu implements Listener {
         }
 
         if (config.proxyEnabled() && playerCache != null && target != null) {
-            // ✅ menu-safe: returns Loading... if stale/missing
             return playerCache.getOrRequestDimension(senderName, target.getName());
         }
 
         return "Unknown";
+    }
+
+    // ---------------------------
+    // ✅ Skull texture injection (remote skin)
+    // ---------------------------
+    private boolean applyTexturesToSkull(SkullMeta meta, String ownerName, String texturesValue, String texturesSignature) {
+        if (meta == null) return false;
+        if (texturesValue == null || texturesValue.isBlank()) return false;
+
+        final boolean dbg = (config != null && config.debug());
+        final String safeName = (ownerName == null || ownerName.isBlank()) ? "HHM" : ownerName;
+        final String sig = (texturesSignature == null || texturesSignature.isBlank()) ? null : texturesSignature;
+
+        try {
+            // Build GameProfile(UUID, NON-NULL NAME)
+            Class<?> gameProfileClz = Class.forName("com.mojang.authlib.GameProfile");
+            Object gameProfile = gameProfileClz
+                    .getConstructor(UUID.class, String.class)
+                    .newInstance(UUID.randomUUID(), safeName);
+
+            // Create Property("textures", value, sig?)
+            Class<?> propClz = Class.forName("com.mojang.authlib.properties.Property");
+            Object texturesProp;
+            try {
+                texturesProp = propClz.getConstructor(String.class, String.class, String.class)
+                        .newInstance("textures", texturesValue, sig);
+            } catch (NoSuchMethodException ignored) {
+                texturesProp = propClz.getConstructor(String.class, String.class)
+                        .newInstance("textures", texturesValue);
+            }
+
+            // Put into property map
+            Object propertyMap = gameProfileClz.getMethod("getProperties").invoke(gameProfile);
+            boolean putOk = false;
+            try {
+                propertyMap.getClass().getMethod("put", String.class, propClz)
+                        .invoke(propertyMap, "textures", texturesProp);
+                putOk = true;
+            } catch (Throwable ignored) {}
+            if (!putOk) {
+                propertyMap.getClass().getMethod("put", Object.class, Object.class)
+                        .invoke(propertyMap, "textures", texturesProp);
+            }
+
+            // ---------------------------------------------------------
+            // ✅ Find the *real* skull profile field (not meta-key junk)
+            // ---------------------------------------------------------
+            Field profileField = findSkullProfileField(meta.getClass());
+            if (profileField == null) {
+                if (dbg) plugin.getLogger().info("[HHM] applyTexturesToSkull: could not find skull profile field on " + meta.getClass().getName());
+                return false;
+            }
+
+            profileField.setAccessible(true);
+            Class<?> fieldType = profileField.getType();
+            String fieldTypeName = fieldType.getName();
+
+            // Case A: field is GameProfile
+            if (fieldType.isAssignableFrom(gameProfileClz) || fieldTypeName.equals(gameProfileClz.getName())) {
+                profileField.set(meta, gameProfile);
+                if (dbg) plugin.getLogger().info("[HHM] applyTexturesToSkull: injected GameProfile into " + profileField.getName());
+                return true;
+            }
+
+            // Case B: field is ResolvableProfile (newer CraftMetaSkull)
+            String ftLower = fieldTypeName.toLowerCase(Locale.ROOT);
+            if (ftLower.contains("resolvableprofile")) {
+                Object resolvable = null;
+
+                // ctor(GameProfile)
+                try {
+                    resolvable = fieldType.getConstructor(gameProfileClz).newInstance(gameProfile);
+                } catch (Throwable ignored) {}
+
+                // static factory methods sometimes exist
+                if (resolvable == null) {
+                    for (String mname : List.of("of", "fromGameProfile", "a")) {
+                        try {
+                            Method m = fieldType.getMethod(mname, gameProfileClz);
+                            resolvable = m.invoke(null, gameProfile);
+                            break;
+                        } catch (Throwable ignored) {}
+                    }
+                }
+
+                if (resolvable == null) {
+                    if (dbg) plugin.getLogger().info("[HHM] applyTexturesToSkull: couldn't build ResolvableProfile for type=" + fieldTypeName);
+                    return false;
+                }
+
+                profileField.set(meta, resolvable);
+                if (dbg) plugin.getLogger().info("[HHM] applyTexturesToSkull: injected ResolvableProfile into " + profileField.getName());
+                return true;
+            }
+
+            // If we got here, we found a field but it's not a supported profile type
+            if (dbg) plugin.getLogger().info("[HHM] applyTexturesToSkull: found field '" + profileField.getName()
+                    + "' but unsupported type: " + fieldTypeName);
+            return false;
+
+        } catch (Throwable t) {
+            if (dbg) {
+                Throwable cause = (t instanceof java.lang.reflect.InvocationTargetException ite && ite.getCause() != null)
+                        ? ite.getCause()
+                        : t;
+                plugin.getLogger().info("[HHM] applyTexturesToSkull: FAILED: "
+                        + cause.getClass().getSimpleName() + ": " + cause.getMessage());
+            }
+            return false;
+        }
+    }
+
+    private Field findSkullProfileField(Class<?> metaClass) {
+        // Walk class hierarchy, but be strict about which fields qualify
+        Class<?> c = metaClass;
+        Field best = null;
+
+        while (c != null && c != Object.class) {
+            Field[] fields;
+            try {
+                fields = c.getDeclaredFields();
+            } catch (Throwable t) {
+                c = c.getSuperclass();
+                continue;
+            }
+
+            for (Field f : fields) {
+                String fname = f.getName();
+                String ftype = f.getType().getName();
+                String ftypeLower = ftype.toLowerCase(Locale.ROOT);
+
+                // ✅ Hard filter: only accept actual profile container types
+                boolean looksLikeProfileType =
+                        ftype.endsWith("GameProfile")
+                                || ftypeLower.contains("gameprofile")
+                                || ftypeLower.contains("resolvableprofile");
+
+                if (!looksLikeProfileType) continue;
+
+                // Prefer exact "profile"
+                if ("profile".equalsIgnoreCase(fname)) return f;
+
+                // Otherwise keep as fallback
+                if (best == null) best = f;
+            }
+
+            c = c.getSuperclass();
+        }
+
+        return best;
     }
 
     // ---------------------------

@@ -33,12 +33,20 @@ public final class TpaCommand implements CommandExecutor {
 
         // If target is on this backend, enforce toggle immediately
         Player target = Bukkit.getPlayerExact(targetName);
-        if (target != null && !toggles.isTpaOn(target)) {
-            if (config.isEnabled("messages.sender.tpa_off.enabled", true)) {
-                player.sendMessage(config.msgWithPrefix("messages.sender.tpa_off.text",
+        if (target != null) {
+            if (!toggles.isTpaOn(target) && !toggles.isTpahereOn(target)) {
+                if (config.isEnabled("messages.sender.both_off.enabled", true)) {
+                    player.sendMessage(config.msgWithPrefix("messages.sender.both_off.text",
+                        "&cThat player has teleport requests off."));
+                }
+                return true;
+            } else if (!toggles.isTpaOn(target)) {
+                if (config.isEnabled("messages.sender.tpa_off.enabled", true)) {
+                    player.sendMessage(config.msgWithPrefix("messages.sender.tpa_off.text",
                         "&cThat player has &lTPA&r &crequests off."));
-            }
-            return true;
+                }
+                return true;
+            } 
         }
 
         boolean handled = Bukkit.dispatchCommand(player, "huskhomes:tpa " + targetName);

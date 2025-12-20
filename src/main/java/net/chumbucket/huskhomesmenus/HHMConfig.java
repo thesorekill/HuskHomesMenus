@@ -24,6 +24,10 @@ public final class HHMConfig {
         return plugin.getConfig().getBoolean("proxy.enabled", true);
     }
 
+    public String backendName() {
+        return plugin.getConfig().getString("backend_name", "Loading...");
+    }
+
     public String prefix() {
         return color(plugin.getConfig().getString("messages.prefix", ""));
     }

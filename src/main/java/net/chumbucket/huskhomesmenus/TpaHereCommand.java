@@ -32,12 +32,21 @@ public final class TpaHereCommand implements CommandExecutor {
         String targetName = args[0];
 
         Player target = Bukkit.getPlayerExact(targetName);
-        if (target != null && !toggles.isTpahereOn(target)) {
-            if (config.isEnabled("messages.sender.tpahere_off.enabled", true)) {
-                player.sendMessage(config.msgWithPrefix("messages.sender.tpahere_off.text",
+        if (target != null) {
+            if (!toggles.isTpaOn(target) && !toggles.isTpahereOn(target)) {
+                if (config.isEnabled("messages.sender.both_off.enabled", true)) {
+                    player.sendMessage(config.msgWithPrefix("messages.sender.both_off.text",
+                        "&cThat player has teleport requests off."));
+                }
+                return true;
+            } else if (!toggles.isTpahereOn(target)) {
+                if (config.isEnabled("messages.sender.tpa_off.enabled", true)) {
+                    player.sendMessage(config.msgWithPrefix("messages.sender.tpa_off.text",
                         "&cThat player has &lTPAHere&r &crequests off."));
-            }
-            return true;
+
+                }
+                return true;
+            } 
         }
 
         boolean handled = Bukkit.dispatchCommand(player, "huskhomes:tpahere " + targetName);

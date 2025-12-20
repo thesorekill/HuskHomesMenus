@@ -7,6 +7,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.plugin.messaging.PluginMessageListener;
 
 import java.io.*;
+import java.lang.reflect.Method;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
@@ -32,7 +33,10 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
     // One-shot PlayerList ALL callback(s)
     private final List<Consumer<List<String>>> playerListAllCallbacks = Collections.synchronizedList(new ArrayList<>());
 
+    // =========================================================
     // ✅ Dimension response sink
+    // =========================================================
+
     public static final class DimResponse {
         public final String playerName;
         public final String dimension;
@@ -47,6 +51,30 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
 
     private volatile Consumer<DimResponse> dimensionSink;
 
+    // =========================================================
+    // ✅ Skin response sink (optional)
+    // =========================================================
+
+    public static final class SkinResponse {
+        public final UUID targetUuid;       // viewer/target
+        public final String playerName;     // subject (sender)
+        public final UUID playerUuid;       // subject uuid
+        public final String value;
+        public final String signature;
+        public final long requestId;
+
+        public SkinResponse(UUID targetUuid, String playerName, UUID playerUuid, String value, String signature, long requestId) {
+            this.targetUuid = targetUuid;
+            this.playerName = playerName;
+            this.playerUuid = playerUuid;
+            this.value = value;
+            this.signature = signature;
+            this.requestId = requestId;
+        }
+    }
+
+    private volatile Consumer<SkinResponse> skinSink;
+
     public OptionalProxyMessenger(JavaPlugin plugin, HHMConfig config) {
         this.plugin = plugin;
         this.config = config;
@@ -58,6 +86,10 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
 
     public void setDimensionSink(Consumer<DimResponse> sink) {
         this.dimensionSink = sink;
+    }
+
+    public void setSkinSink(Consumer<SkinResponse> sink) {
+        this.skinSink = sink;
     }
 
     public void tryEnable() {
@@ -147,6 +179,32 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
             return forwardSubchannelToPlayerName(remotePlayerName, SUBCHANNEL, payloadBytes.toByteArray());
         } catch (Throwable t) {
             plugin.getLogger().warning("Failed to request dimension from " + remotePlayerName + ": " + t.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * ✅ Ask a (possibly remote) player for their skin textures.
+     * Remote backend replies to requesterName with:
+     * SKIN_RESP(targetUuid, subjectName, subjectUuid, texturesValue, texturesSignature, requestId)
+     */
+    public boolean requestSkinByName(String remotePlayerName, String requesterName, UUID targetUuid, long requestId) {
+        if (!enabled) return false;
+        if (remotePlayerName == null || remotePlayerName.isBlank()) return false;
+        if (requesterName == null || requesterName.isBlank()) return false;
+        if (targetUuid == null) return false;
+
+        try {
+            ByteArrayOutputStream payloadBytes = new ByteArrayOutputStream();
+            DataOutputStream out = new DataOutputStream(payloadBytes);
+            out.writeUTF("SKIN_REQ");
+            out.writeUTF(requesterName);
+            out.writeUTF(targetUuid.toString());
+            out.writeLong(requestId);
+
+            return forwardSubchannelToPlayerName(remotePlayerName, SUBCHANNEL, payloadBytes.toByteArray());
+        } catch (Throwable t) {
+            plugin.getLogger().warning("Failed to request skin from " + remotePlayerName + ": " + t.getMessage());
             return false;
         }
     }
@@ -272,6 +330,110 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
     }
 
     // =========================================================
+    // ✅ Extract textures from a local Player (remote backend side)
+    //    FIXED: supports modern PlayerProfile AND legacy GameProfile
+    // =========================================================
+    private PendingRequests.Skin extractTexturesFromPlayer(Player p) {
+        if (p == null) return null;
+
+        // -------- Strategy A: Modern Bukkit/Paper PlayerProfile API --------
+        // Player#getPlayerProfile() -> org.bukkit.profile.PlayerProfile
+        try {
+            Method getPlayerProfile = p.getClass().getMethod("getPlayerProfile");
+            Object profile = getPlayerProfile.invoke(p);
+            if (profile != null) {
+                // profile.getProperties() -> Collection<ProfileProperty>
+                Method getProps = profile.getClass().getMethod("getProperties");
+                Object propsObj = getProps.invoke(profile);
+
+                if (propsObj instanceof Iterable<?> props) {
+                    for (Object prop : props) {
+                        if (prop == null) continue;
+
+                        String name = null;
+                        try {
+                            Method getName = prop.getClass().getMethod("getName");
+                            name = String.valueOf(getName.invoke(prop));
+                        } catch (Throwable ignored) {}
+
+                        if (name == null || !name.equalsIgnoreCase("textures")) continue;
+
+                        String value = null;
+                        String sig = null;
+
+                        try {
+                            Method getValue = prop.getClass().getMethod("getValue");
+                            value = (String) getValue.invoke(prop);
+                        } catch (Throwable ignored) {}
+
+                        try {
+                            Method getSignature = prop.getClass().getMethod("getSignature");
+                            Object s = getSignature.invoke(prop);
+                            sig = (s == null) ? null : String.valueOf(s);
+                        } catch (Throwable ignored) {}
+
+                        if (value != null && !value.isBlank()) {
+                            if (config.debug()) plugin.getLogger().info("[HHM] extractTextures: PlayerProfile OK for " + p.getName() + " valueLen=" + value.length());
+                            return new PendingRequests.Skin(value, (sig == null || sig.isBlank()) ? null : sig);
+                        }
+                    }
+                }
+            }
+        } catch (NoSuchMethodException ignored) {
+            // server doesn't have getPlayerProfile
+        } catch (Throwable t) {
+            if (config.debug()) plugin.getLogger().info("[HHM] extractTextures: PlayerProfile failed for " + p.getName() + " err=" + t.getClass().getSimpleName());
+        }
+
+        // -------- Strategy B: Legacy CraftPlayer#getProfile() -> GameProfile --------
+        try {
+            Method getProfile = p.getClass().getMethod("getProfile");
+            Object gp = getProfile.invoke(p);
+            if (gp == null) return null;
+
+            Method getProps = gp.getClass().getMethod("getProperties");
+            Object props = getProps.invoke(gp);
+            if (props == null) return null;
+
+            Method get = null;
+            for (Method m : props.getClass().getMethods()) {
+                if (m.getName().equals("get") && m.getParameterCount() == 1) {
+                    get = m;
+                    break;
+                }
+            }
+            if (get == null) return null;
+
+            Object texturesObj = get.invoke(props, "textures");
+            if (!(texturesObj instanceof Collection<?> col) || col.isEmpty()) return null;
+
+            Object prop = col.iterator().next();
+            if (prop == null) return null;
+
+            Method getValue = prop.getClass().getMethod("getValue");
+            String value = (String) getValue.invoke(prop);
+
+            String sig = null;
+            try {
+                Method getSignature = prop.getClass().getMethod("getSignature");
+                sig = (String) getSignature.invoke(prop);
+            } catch (Throwable ignored2) {}
+
+            if (value == null || value.isBlank()) return null;
+
+            if (config.debug()) plugin.getLogger().info("[HHM] extractTextures: GameProfile OK for " + p.getName() + " valueLen=" + value.length());
+            return new PendingRequests.Skin(value, (sig == null || sig.isBlank()) ? null : sig);
+
+        } catch (NoSuchMethodException ignored) {
+            // getProfile not present on this server build
+        } catch (Throwable t) {
+            if (config.debug()) plugin.getLogger().info("[HHM] extractTextures: GameProfile failed for " + p.getName() + " err=" + t.getClass().getSimpleName());
+        }
+
+        return null;
+    }
+
+    // =========================================================
     // Incoming responses
     // =========================================================
 
@@ -294,12 +456,15 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
                     String cmd = din.readUTF();
                     if (cmd == null || cmd.isBlank()) return;
 
+                    // =================================================
+                    // DIM
+                    // =================================================
                     if ("DIM_REQ".equalsIgnoreCase(cmd)) {
                         String requesterName = din.readUTF();
                         if (requesterName == null || requesterName.isBlank()) return;
 
                         long requestId = 0L;
-                        try { requestId = din.readLong(); } catch (EOFException ignored) { /* old format */ }
+                        try { requestId = din.readLong(); } catch (EOFException ignored) {}
 
                         String dim = resolveDimension(player);
 
@@ -319,7 +484,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
                         String dim = din.readUTF();
 
                         long requestId = 0L;
-                        try { requestId = din.readLong(); } catch (EOFException ignored) { /* old format */ }
+                        try { requestId = din.readLong(); } catch (EOFException ignored) {}
 
                         Consumer<DimResponse> sink = this.dimensionSink;
                         if (sink != null && name != null && !name.isBlank()) {
@@ -327,6 +492,98 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
                         }
                         return;
                     }
+
+                    // =================================================
+                    // ✅ SKIN
+                    // =================================================
+                    if ("SKIN_REQ".equalsIgnoreCase(cmd)) {
+                        String requesterName = din.readUTF();
+                        if (requesterName == null || requesterName.isBlank()) return;
+
+                        String targetUuidStr = din.readUTF();
+                        if (targetUuidStr == null || targetUuidStr.isBlank()) return;
+
+                        UUID targetUuid;
+                        try { targetUuid = UUID.fromString(targetUuidStr); }
+                        catch (Throwable t) { return; }
+
+                        long requestId = 0L;
+                        try { requestId = din.readLong(); } catch (EOFException ignored) {}
+
+                        if (config.debug()) {
+                            plugin.getLogger().info("[HHM] SKIN_REQ received: subject=" + (player != null ? player.getName() : "null")
+                                    + " requester=" + requesterName + " target=" + targetUuidStr);
+                        }
+
+                        PendingRequests.Skin skin = extractTexturesFromPlayer(player);
+                        if (skin == null || skin.value() == null || skin.value().isBlank()) {
+                            if (config.debug()) {
+                                plugin.getLogger().info("[HHM] SKIN_REQ: no textures available for subject=" + (player != null ? player.getName() : "null"));
+                            }
+                            return;
+                        }
+
+                        UUID subjectUuid = null;
+                        try { subjectUuid = (player != null ? player.getUniqueId() : null); } catch (Throwable ignored) {}
+
+                        ByteArrayOutputStream bout = new ByteArrayOutputStream();
+                        DataOutputStream dout = new DataOutputStream(bout);
+                        dout.writeUTF("SKIN_RESP");
+                        dout.writeUTF(targetUuid.toString());
+                        dout.writeUTF(player != null ? player.getName() : "");
+                        dout.writeUTF(subjectUuid != null ? subjectUuid.toString() : "");
+                        dout.writeUTF(skin.value());
+                        dout.writeUTF(skin.signature() == null ? "" : skin.signature());
+                        dout.writeLong(requestId);
+
+                        if (config.debug()) {
+                            plugin.getLogger().info("[HHM] Sending SKIN_RESP -> requester=" + requesterName
+                                    + " subject=" + (player != null ? player.getName() : "null")
+                                    + " valueLen=" + skin.value().length());
+                        }
+
+                        forwardSubchannelToPlayerName(requesterName, SUBCHANNEL, bout.toByteArray());
+                        return;
+                    }
+
+                    if ("SKIN_RESP".equalsIgnoreCase(cmd)) {
+                        String targetUuidStr = din.readUTF();
+                        String subjectName = din.readUTF();
+                        String subjectUuidStr = din.readUTF();
+                        String value = din.readUTF();
+                        String sig = din.readUTF();
+
+                        // ✅ DEBUG LINE YOU REQUESTED
+                        if (config.debug()) {
+                            plugin.getLogger().info("[HHM] SKIN_RESP for target=" + targetUuidStr + " subject=" + subjectName
+                                    + " valueLen=" + (value == null ? 0 : value.length()));
+                        }
+
+                        long requestId = 0L;
+                        try { requestId = din.readLong(); } catch (EOFException ignored) {}
+
+                        UUID targetUuid;
+                        try { targetUuid = UUID.fromString(targetUuidStr); }
+                        catch (Throwable t) { return; }
+
+                        UUID subjectUuid = null;
+                        if (subjectUuidStr != null && !subjectUuidStr.isBlank()) {
+                            try { subjectUuid = UUID.fromString(subjectUuidStr); } catch (Throwable ignored) {}
+                        }
+
+                        if (value == null || value.isBlank() || subjectName == null || subjectName.isBlank()) return;
+
+                        PendingRequests.setSkin(targetUuid, subjectName, subjectUuid, value,
+                                (sig == null || sig.isBlank()) ? null : sig);
+
+                        Consumer<SkinResponse> sink = this.skinSink;
+                        if (sink != null) {
+                            try { sink.accept(new SkinResponse(targetUuid, subjectName, subjectUuid, value, sig, requestId)); }
+                            catch (Throwable ignored) {}
+                        }
+                        return;
+                    }
+
                 } catch (Throwable ignored) {}
                 return;
             }

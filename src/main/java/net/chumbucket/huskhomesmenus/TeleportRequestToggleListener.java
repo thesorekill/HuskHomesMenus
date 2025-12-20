@@ -47,9 +47,31 @@ public final class TeleportRequestToggleListener implements Listener {
                     ? ConfirmRequestMenu.RequestType.TPA
                     : ConfirmRequestMenu.RequestType.TPAHERE;
 
+            UUID requesterUuid = resolveRequesterUuid(event);
+
             if (requesterName != null && !requesterName.isBlank()) {
-                PendingRequests.set(target.getUniqueId(), requesterName, resolveRequesterUuid(event), rt);
+                PendingRequests.set(target.getUniqueId(), requesterName, requesterUuid, rt);
             }
+
+            // ✅ SKIN HANDSHAKE: if requester is remote, ask their backend for textures and store for our menu head
+            if (config.proxyEnabled()
+                    && messenger != null
+                    && messenger.isEnabled()
+                    && requesterName != null
+                    && !requesterName.isBlank()
+                    && target.isOnline()) {
+
+                Player requesterLocal = resolveRequesterPlayer(event);
+                boolean requesterIsLocal = (requesterLocal != null);
+
+                if (!requesterIsLocal) {
+                    long reqId = (System.nanoTime() ^ (System.currentTimeMillis() << 1)) & Long.MAX_VALUE;
+                    boolean ok = messenger.requestSkinByName(requesterName, target.getName(), target.getUniqueId(), reqId);
+
+                    if (debug) Bukkit.getLogger().info("[HHM] requestSkinByName(" + requesterName + " -> " + target.getName() + ") ok=" + ok);
+                }
+            }
+
             return;
         }
 
@@ -91,7 +113,7 @@ public final class TeleportRequestToggleListener implements Listener {
             return;
         }
 
-        if (!messenger.isEnabled()) {
+        if (messenger == null || !messenger.isEnabled()) {
             if (debug) Bukkit.getLogger().info("[HHM] messenger disabled; cannot send cross-server denial");
             return;
         }
