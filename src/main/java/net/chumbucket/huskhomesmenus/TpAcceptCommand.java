@@ -1,5 +1,6 @@
 package net.chumbucket.huskhomesmenus;
 
+import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
 import org.bukkit.command.*;
 import org.bukkit.entity.Player;
@@ -8,14 +9,29 @@ public final class TpAcceptCommand implements CommandExecutor {
 
     private final ConfirmRequestMenu menu;
 
-    public TpAcceptCommand(ConfirmRequestMenu menu) {
+    // NEW
+    private final ToggleManager toggles;
+
+    public TpAcceptCommand(ConfirmRequestMenu menu, ToggleManager toggles) {
         this.menu = menu;
+        this.toggles = toggles;
     }
 
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
         if (!(sender instanceof Player p)) {
             sender.sendMessage(ChatColor.RED + "Players only.");
+            return true;
+        }
+
+        // NEW: If player disabled GUI menu, delegate to HuskHomes /tpaccept
+        if (toggles != null && !toggles.isTpMenuOn(p)) {
+            PendingRequests.bypassForMs(p.getUniqueId(), 1500L);
+            String command = (args.length == 1) ? "huskhomes:tpaccept " + args[0] : "huskhomes:tpaccept";
+            boolean handled = Bukkit.dispatchCommand(p, command);
+            if (!handled) {
+                p.sendMessage(ChatColor.RED + "Failed to run HuskHomes /tpaccept (huskhomes:tpaccept).");
+            }
             return true;
         }
 

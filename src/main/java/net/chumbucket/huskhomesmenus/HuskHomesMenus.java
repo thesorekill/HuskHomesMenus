@@ -28,13 +28,13 @@ public final class HuskHomesMenus extends JavaPlugin {
         // Menu
         ConfirmRequestMenu confirmMenu = new ConfirmRequestMenu(this, config, playerCache);
         Bukkit.getPluginManager().registerEvents(confirmMenu, this);
-        Bukkit.getPluginManager().registerEvents(new TeleportCommandInterceptListener(confirmMenu, config), this);
+        Bukkit.getPluginManager().registerEvents(new TeleportCommandInterceptListener(confirmMenu, config, toggleManager), this);
 
         // Commands
         safeSetExecutor("tpa", new TpaCommand(toggleManager, config));
         safeSetExecutor("tpahere", new TpaHereCommand(toggleManager, config));
-        safeSetExecutor("tpaccept", new TpAcceptCommand(confirmMenu));
-        safeSetExecutor("tpdeny", new TpDenyCommand());
+        safeSetExecutor("tpaccept", new TpAcceptCommand(confirmMenu, toggleManager));
+        safeSetExecutor("tpdeny", new TpDenyCommand(confirmMenu, toggleManager));
 
         // ✅ Tab completion across proxy + remove own name
         safeSetTabCompleter("tpa", new ProxyTabCompleter(playerCache, true));

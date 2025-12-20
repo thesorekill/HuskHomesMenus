@@ -13,9 +13,13 @@ public final class TeleportCommandInterceptListener implements Listener {
     private final ConfirmRequestMenu menu;
     private final HHMConfig config;
 
-    public TeleportCommandInterceptListener(ConfirmRequestMenu menu, HHMConfig config) {
+    // NEW
+    private final ToggleManager toggles;
+
+    public TeleportCommandInterceptListener(ConfirmRequestMenu menu, HHMConfig config, ToggleManager toggles) {
         this.menu = menu;
         this.config = config;
+        this.toggles = toggles;
     }
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
@@ -27,6 +31,9 @@ public final class TeleportCommandInterceptListener implements Listener {
 
         // If the confirm menu is disabled, DO NOT intercept; let HuskHomes handle commands normally
         if (!isConfirmMenuEnabled()) return;
+
+        // NEW: if player disabled menu, DO NOT intercept /tpaccept or /tpdeny
+        if (toggles != null && !toggles.isTpMenuOn(p)) return;
 
         String msg = e.getMessage();
         if (msg == null) return;
