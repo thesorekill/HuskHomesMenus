@@ -80,7 +80,7 @@ permissions:
 
   huskhomesmenus.tpaccept:
     description: Allows accepting teleport requests
-    default: true
+    default: false
   huskhomesmenus.tpdeny:
     description: Allows denying teleport requests
     default: false
