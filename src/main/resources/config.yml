@@ -141,7 +141,7 @@ proxy:
   #
   # BungeeCord/Waterfall:
   #  - Set this to true
-  enabled: true
+  enabled: false
 
 # ┌──────────────────────────────────────────────────────────────┐
 # │ Command Auto-Completion / Player lookup                      │
