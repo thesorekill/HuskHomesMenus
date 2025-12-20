@@ -7,6 +7,8 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+
 import java.lang.reflect.Method;
 import java.util.Locale;
 import java.util.UUID;
@@ -18,6 +20,8 @@ public final class TeleportRequestToggleListener implements Listener {
     private final OptionalProxyMessenger messenger;
     private final HHMConfig config;
     private final boolean debug;
+
+    private static final LegacyComponentSerializer AMP = LegacyComponentSerializer.legacyAmpersand();
 
     public TeleportRequestToggleListener(HuskHomesMenus plugin, ToggleManager toggles, OptionalProxyMessenger messenger, HHMConfig config) {
         this.plugin = plugin;
@@ -113,7 +117,9 @@ public final class TeleportRequestToggleListener implements Listener {
             String notice = config.msgWithPrefix("messages.target.blocked_notice.text",
                     "&7You blocked a teleport request from &f%sender%&7.")
                     .replace("%sender%", requesterName);
-            target.sendMessage(notice);
+
+            // ✅ send colored text via Adventure
+            target.sendMessage(AMP.deserialize(notice));
         }
 
         String msg = null;
@@ -138,7 +144,7 @@ public final class TeleportRequestToggleListener implements Listener {
 
         final Player requester = resolveRequesterPlayer(event);
         if (requester != null) {
-            if (!msg.isEmpty()) requester.sendMessage(msg);
+            if (!msg.isEmpty()) requester.sendMessage(AMP.deserialize(msg));
             if (debug) Bukkit.getLogger().info("Sent local denial to " + requester.getName());
             return;
         }
@@ -156,7 +162,7 @@ public final class TeleportRequestToggleListener implements Listener {
 
         final String requesterName = resolveRequesterName(event);
         if (requesterName != null && !requesterName.isBlank() && !msg.isEmpty()) {
-            boolean ok = messenger.messagePlayer(requesterName, msg);
+            boolean ok = messenger.messagePlayer(requesterName, msg); // keep as String for proxy transport
             if (debug) Bukkit.getLogger().info("messenger.messagePlayer -> " + ok);
             if (ok) return;
         } else {
@@ -165,7 +171,7 @@ public final class TeleportRequestToggleListener implements Listener {
 
         final UUID requesterUuid = resolveRequesterUuid(event);
         if (requesterUuid != null && !msg.isEmpty()) {
-            boolean ok = tryForwardToIfPresent(messenger, requesterUuid, msg);
+            boolean ok = tryForwardToIfPresent(messenger, requesterUuid, msg); // keep as String for proxy transport
             if (debug) Bukkit.getLogger().info("messenger.forwardTo (reflective) -> " + ok);
         } else {
             if (debug) Bukkit.getLogger().info("requesterUuid unresolved; cannot forward denial");

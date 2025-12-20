@@ -30,6 +30,7 @@ public final class Placeholders extends PlaceholderExpansion {
 
     @Override
     public String getVersion() {
+        // ✅ avoids deprecated JavaPlugin#getDescription()
         return plugin.getPluginMeta().getVersion();
     }
 
@@ -122,7 +123,12 @@ public final class Placeholders extends PlaceholderExpansion {
         return color(on ? "&a&lON" : "&c&lOFF");
     }
 
+    /**
+     * PlaceholderAPI wants a String back, so we keep this as legacy formatting.
+     * (Your scoreboard/plugin consuming this will interpret &-codes.)
+     */
     private String color(String s) {
+        if (s == null) return "";
         return AMP.serialize(AMP.deserialize(s));
     }
 }

@@ -17,7 +17,6 @@ public final class TeleportCommandInterceptListener implements Listener {
 
     private static final LegacyComponentSerializer AMP = LegacyComponentSerializer.legacyAmpersand();
 
-
     public TeleportCommandInterceptListener(ConfirmRequestMenu menu, HHMConfig config, ToggleManager toggles) {
         this.menu = menu;
         this.config = config;
@@ -75,7 +74,11 @@ public final class TeleportCommandInterceptListener implements Listener {
         if (requesterName == null || requesterName.isBlank()) {
             PendingRequests.Pending pending = PendingRequests.get(p.getUniqueId());
             if (pending == null) {
-                p.sendMessage(AMP.deserialize(config.prefix()).append(AMP.deserialize("&cYou have no pending teleport requests.")));
+                // ✅ no ChatColor; use Adventure + legacy & codes
+                p.sendMessage(
+                        AMP.deserialize(config.prefix())
+                                .append(AMP.deserialize("&cYou have no pending teleport requests."))
+                );
                 return;
             }
             requesterName = pending.senderName();

@@ -9,10 +9,8 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 public final class TpAcceptCommand implements CommandExecutor {
 
     private final ConfirmRequestMenu menu;
-
     private final ToggleManager toggles;
 
-    
     private static final LegacyComponentSerializer AMP = LegacyComponentSerializer.legacyAmpersand();
 
     public TpAcceptCommand(ConfirmRequestMenu menu, ToggleManager toggles) {

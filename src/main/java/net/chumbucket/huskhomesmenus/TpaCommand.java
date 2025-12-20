@@ -39,22 +39,37 @@ public final class TpaCommand implements CommandExecutor {
         if (target != null) {
             if (!toggles.isTpaOn(target) && !toggles.isTpahereOn(target)) {
                 if (config.isEnabled("messages.sender.both_off.enabled", true)) {
-                    player.sendMessage(config.msgWithPrefix("messages.sender.both_off.text",
-                        "&cThat player has teleport requests off."));
+                    player.sendMessage(
+                        AMP.deserialize(
+                            config.msgWithPrefix(
+                                "messages.sender.both_off.text",
+                                "&cThat player has teleport requests off."
+                            )
+                        )
+                    );
                 }
                 return true;
             } else if (!toggles.isTpaOn(target)) {
                 if (config.isEnabled("messages.sender.tpa_off.enabled", true)) {
-                    player.sendMessage(config.msgWithPrefix("messages.sender.tpa_off.text",
-                        "&cThat player has &lTPA&r &crequests off."));
+                    player.sendMessage(
+                        AMP.deserialize(
+                            config.msgWithPrefix(
+                                "messages.sender.tpa_off.text",
+                                "&cThat player has &lTPA&r &crequests off."
+                            )
+                        )
+                    );
                 }
                 return true;
-            } 
+            }
         }
 
         boolean handled = Bukkit.dispatchCommand(player, "huskhomes:tpa " + targetName);
         if (!handled) {
-            player.sendMessage(AMP.deserialize(config.prefix()).append(AMP.deserialize("&cFailed to run HuskHomes /tpa.")));;
+            player.sendMessage(
+                AMP.deserialize(config.prefix())
+                    .append(AMP.deserialize("&cFailed to run HuskHomes /tpa."))
+            );
         }
         return true;
     }

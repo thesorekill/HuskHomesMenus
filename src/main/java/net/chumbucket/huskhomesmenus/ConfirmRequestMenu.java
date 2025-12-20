@@ -409,6 +409,8 @@ public final class ConfirmRequestMenu implements Listener {
     }
 
     private void updateRegionSlots(Inventory inv, List<Integer> slots, String regionValue) {
+        String safeRegion = safe(regionValue);
+
         for (Integer slot : slots) {
             if (slot == null) continue;
             if (slot < 0 || slot >= inv.getSize()) continue;
@@ -422,8 +424,8 @@ public final class ConfirmRequestMenu implements Listener {
             Component dn = meta.displayName();
             if (dn != null) {
                 String text = PLAIN.serialize(dn)
-                        .replace("Loading...", regionValue)
-                        .replace("%region%", regionValue);
+                        .replace("Loading...", safeRegion)
+                        .replace("%region%", safeRegion);
                 meta.displayName(AMP.deserialize(config.color(text)));
             }
 
@@ -438,8 +440,8 @@ public final class ConfirmRequestMenu implements Listener {
                     }
 
                     String line = PLAIN.serialize(lineComp)
-                            .replace("Loading...", regionValue)
-                            .replace("%region%", regionValue);
+                            .replace("Loading...", safeRegion)
+                            .replace("%region%", safeRegion);
                     newLore.add(AMP.deserialize(config.color(line)));
                 }
 
@@ -609,8 +611,8 @@ public final class ConfirmRequestMenu implements Listener {
 
         if (!ok) {
             p.sendMessage(
-                AMP.deserialize(config.prefix())
-                    .append(AMP.deserialize("&cCould not accept the request."))
+                    AMP.deserialize(config.prefix())
+                            .append(AMP.deserialize("&cCould not accept the request."))
             );
         }
     }
@@ -629,8 +631,8 @@ public final class ConfirmRequestMenu implements Listener {
 
         if (!ok) {
             p.sendMessage(
-                AMP.deserialize(config.prefix())
-                    .append(AMP.deserialize("&cCould not decline the request."))
+                    AMP.deserialize(config.prefix())
+                            .append(AMP.deserialize("&cCould not decline the request."))
             );
         }
     }
@@ -639,7 +641,7 @@ public final class ConfirmRequestMenu implements Listener {
     // Item builders
     // ---------------------------
     private ItemStack buildPlayerHead(Map<?, ?> itemMap, Player viewer, String senderName, String dimension, String region) {
-        String name = config.color(mapGetString(itemMap, "name", "&a&lPLAYER"));
+        String name = mapGetString(itemMap, "name", "&a&lPLAYER");
         List<String> lore = mapGetStringList(itemMap, "lore");
 
         String headOf = mapGetString(itemMap, "head_of", "SENDER").toUpperCase(Locale.ROOT);
@@ -701,7 +703,7 @@ public final class ConfirmRequestMenu implements Listener {
             else mat = materialOr(Material.GRASS_BLOCK, overworldMat);
         }
 
-        String name = config.color(mapGetString(itemMap, "name", "&a&lLOCATION"));
+        String name = mapGetString(itemMap, "name", "&a&lLOCATION");
         List<String> lore = mapGetStringList(itemMap, "lore");
 
         ItemStack it = new ItemStack(mat);
@@ -724,7 +726,7 @@ public final class ConfirmRequestMenu implements Listener {
 
     private ItemStack buildGenericItem(Map<?, ?> itemMap, String senderName, String dimension, String region) {
         Material mat = materialOr(Material.PAPER, mapGetString(itemMap, "material", "PAPER"));
-        String name = config.color(mapGetString(itemMap, "name", "&a&lINFO"));
+        String name = mapGetString(itemMap, "name", "&a&lINFO");
         List<String> lore = mapGetStringList(itemMap, "lore");
 
         ItemStack it = new ItemStack(mat);

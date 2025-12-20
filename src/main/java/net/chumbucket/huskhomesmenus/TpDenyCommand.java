@@ -19,7 +19,7 @@ public final class TpDenyCommand implements CommandExecutor {
     private final ToggleManager toggles;
 
     private static final LegacyComponentSerializer AMP = LegacyComponentSerializer.legacyAmpersand();
-    
+
     public TpDenyCommand(ConfirmRequestMenu menu, ToggleManager toggles) {
         this.menu = menu;
         this.toggles = toggles;

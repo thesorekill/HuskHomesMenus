@@ -16,7 +16,7 @@ public final class PendingRequests {
     // Per-target skin cache: target -> (senderLower -> Skin)
     private static final ConcurrentHashMap<UUID, ConcurrentHashMap<String, Skin>> SKINS = new ConcurrentHashMap<>();
 
-    // ✅ GLOBAL skin caches (helps if timing/target mapping differs)
+    // GLOBAL skin caches (helps if timing/target mapping differs)
     private static final ConcurrentHashMap<String, Skin> GLOBAL_SKINS_BY_NAME = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<UUID, Skin> GLOBAL_SKINS_BY_UUID = new ConcurrentHashMap<>();
 
@@ -50,7 +50,7 @@ public final class PendingRequests {
     }
 
     // --------------------------------------------------------------------
-    // ✅ Skin caching for cross-backend player heads
+    // Skin caching for cross-backend player heads
     // --------------------------------------------------------------------
 
     public static void setSkin(UUID target, String senderName, String texturesValue, String texturesSignature) {

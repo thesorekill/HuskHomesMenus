@@ -38,18 +38,29 @@ public final class TpaHereCommand implements CommandExecutor {
         if (target != null) {
             if (!toggles.isTpaOn(target) && !toggles.isTpahereOn(target)) {
                 if (config.isEnabled("messages.sender.both_off.enabled", true)) {
-                    player.sendMessage(config.msgWithPrefix("messages.sender.both_off.text",
-                        "&cThat player has teleport requests off."));
+                    player.sendMessage(
+                        AMP.deserialize(
+                            config.msgWithPrefix(
+                                "messages.sender.both_off.text",
+                                "&cThat player has teleport requests off."
+                            )
+                        )
+                    );
                 }
                 return true;
             } else if (!toggles.isTpahereOn(target)) {
                 if (config.isEnabled("messages.sender.tpa_off.enabled", true)) {
-                    player.sendMessage(config.msgWithPrefix("messages.sender.tpa_off.text",
-                        "&cThat player has &lTPAHere&r &crequests off."));
-
+                    player.sendMessage(
+                        AMP.deserialize(
+                            config.msgWithPrefix(
+                                "messages.sender.tpa_off.text",
+                                "&cThat player has &lTPAHere&r &crequests off."
+                            )
+                        )
+                    );
                 }
                 return true;
-            } 
+            }
         }
 
         boolean handled = Bukkit.dispatchCommand(player, "huskhomes:tpahere " + targetName);

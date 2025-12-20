@@ -51,7 +51,7 @@ public final class ToggleCommands implements CommandExecutor {
         }
     }
 
-    // Existing logic (unchanged)
+    // Existing logic (fixed: send Adventure component, not legacy String)
     private void sendToggleStatus(Player p, boolean isTpa, boolean on) {
         if (!config.isEnabled("messages.toggles.show_status_lines.enabled", true)) return;
 
@@ -65,10 +65,10 @@ public final class ToggleCommands implements CommandExecutor {
                 .replace("%color%", on ? "&a" : "&c")
                 .replace("%state%", on ? "&lON" : "&lOFF");
 
-        p.sendMessage(config.prefix() + config.color(template));
+        p.sendMessage(AMP.deserialize(config.prefix() + template));
     }
 
-    // Existing TPMenu status line (unchanged)
+    // Existing TPMenu status line (fixed)
     private void sendTpMenuStatus(Player p, boolean on) {
         if (!config.isEnabled("messages.toggles.show_status_lines.enabled", true)) return;
 
@@ -82,10 +82,10 @@ public final class ToggleCommands implements CommandExecutor {
                 .replace("%color%", on ? "&a" : "&c")
                 .replace("%state%", on ? "&lON" : "&lOFF");
 
-        p.sendMessage(config.prefix() + config.color(template));
+        p.sendMessage(AMP.deserialize(config.prefix() + template));
     }
 
-    // ✅ NEW: TPAuto status line
+    // ✅ NEW: TPAuto status line (fixed)
     private void sendTpAutoStatus(Player p, boolean on) {
         if (!config.isEnabled("messages.toggles.show_status_lines.enabled", true)) return;
 
@@ -99,7 +99,7 @@ public final class ToggleCommands implements CommandExecutor {
                 .replace("%color%", on ? "&a" : "&c")
                 .replace("%state%", on ? "&lON" : "&lOFF");
 
-        p.sendMessage(config.prefix() + config.color(template));
+        p.sendMessage(AMP.deserialize(config.prefix() + template));
     }
 
     // kept for compatibility with existing patterns
