@@ -464,7 +464,7 @@ public final class ConfirmRequestMenu implements Listener {
         if (!(e.getInventory().getHolder() instanceof ConfirmHolder)) return;
 
         // If disabled in config, do nothing
-        if (!config.isEnabled("menus.confirm_request.auto_deny_on_close.enabled", true)) {
+        if (!config.isEnabled("menus.confirm_request.auto_deny_on_close", true)) {
             sessions.remove(p.getUniqueId());
             return;
         }
