@@ -23,8 +23,8 @@ import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitRunnable;
 
 import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import net.kyori.adventure.text.format.TextDecoration;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -40,7 +40,6 @@ public final class ConfirmRequestMenu implements Listener {
     private final ProxyPlayerCache playerCache;
 
     private static final LegacyComponentSerializer AMP = LegacyComponentSerializer.legacyAmpersand();
-    private static final PlainTextComponentSerializer PLAIN = PlainTextComponentSerializer.plainText();
 
     private final NamespacedKey KEY_DIM_ITEM;
     private final NamespacedKey KEY_DIM_OVERWORLD;
@@ -75,6 +74,20 @@ public final class ConfirmRequestMenu implements Listener {
         this.KEY_DIM_END = new NamespacedKey(plugin, "hhm_dim_end_mat");
     }
 
+    /**
+     * Converts legacy text (with & color codes) into a Component, and disables italics unless the
+     * config explicitly requests italics via &o / §o.
+     */
+    private Component legacyToComponentNoItalic(String legacy) {
+        String colored = config.color(legacy == null ? "" : legacy);
+
+        // If they explicitly asked for italics in config, don't override it
+        boolean wantsItalic = colored.contains("&o") || colored.contains("§o");
+
+        Component c = AMP.deserialize(colored);
+        return wantsItalic ? c : c.decoration(TextDecoration.ITALIC, false);
+    }
+
     public void open(Player target, String senderName, RequestType type) {
         if (!config.isEnabled("menus.confirm_request.enabled", true)) return;
 
@@ -86,6 +99,7 @@ public final class ConfirmRequestMenu implements Listener {
         String title = config.color(menu.getString(titleKey, menu.getString("title", "&7CONFIRM REQUEST")));
 
         ConfirmHolder holder = new ConfirmHolder(senderName, type);
+        // Titles are fine (not lore), but we keep consistent.
         Inventory inv = Bukkit.createInventory(holder, rows * 9, AMP.deserialize(title));
 
         boolean senderLocal = (senderName != null && Bukkit.getPlayerExact(senderName) != null);
@@ -351,15 +365,13 @@ public final class ConfirmRequestMenu implements Listener {
 
             Component dn = meta.displayName();
             if (dn != null) {
-                // get readable text from the existing component (drops color, keeps words)
-                String text = PLAIN.serialize(dn);
+                String text = AMP.serialize(dn);
 
-                // do your replacements
                 text = text.replace("%dimension_name%", safeDim)
                         .replace("Loading...", safeDim);
 
-                // re-apply your color formatting (& codes etc.)
-                meta.displayName(AMP.deserialize(config.color(text)));
+                // ✅ preserve colors + disable italics unless &o
+                meta.displayName(legacyToComponentNoItalic(text));
             }
 
             List<Component> lore = meta.lore();
@@ -367,17 +379,18 @@ public final class ConfirmRequestMenu implements Listener {
                 List<Component> newLore = new ArrayList<>(lore.size());
 
                 for (Component lineComp : lore) {
-                    if (lineComp == null) { // usually won’t happen, but keeps parity with your old code
+                    if (lineComp == null) {
                         newLore.add(null);
                         continue;
                     }
 
-                    String line = PLAIN.serialize(lineComp);
+                    String line = AMP.serialize(lineComp);
 
                     line = line.replace("%dimension_name%", safeDim)
                             .replace("Loading...", safeDim);
 
-                    newLore.add(AMP.deserialize(config.color(line)));
+                    // ✅ preserve colors + disable italics unless &o
+                    newLore.add(legacyToComponentNoItalic(line));
                 }
 
                 meta.lore(newLore);
@@ -433,10 +446,12 @@ public final class ConfirmRequestMenu implements Listener {
 
             Component dn = meta.displayName();
             if (dn != null) {
-                String text = PLAIN.serialize(dn)
+                String text = AMP.serialize(dn)
                         .replace("Loading...", safeRegion)
                         .replace("%region%", safeRegion);
-                meta.displayName(AMP.deserialize(config.color(text)));
+
+                // ✅ preserve colors + disable italics unless &o
+                meta.displayName(legacyToComponentNoItalic(text));
             }
 
             List<Component> lore = meta.lore();
@@ -449,10 +464,12 @@ public final class ConfirmRequestMenu implements Listener {
                         continue;
                     }
 
-                    String line = PLAIN.serialize(lineComp)
+                    String line = AMP.serialize(lineComp)
                             .replace("Loading...", safeRegion)
                             .replace("%region%", safeRegion);
-                    newLore.add(AMP.deserialize(config.color(line)));
+
+                    // ✅ preserve colors + disable italics unless &o
+                    newLore.add(legacyToComponentNoItalic(line));
                 }
 
                 meta.lore(newLore);
@@ -684,10 +701,14 @@ public final class ConfirmRequestMenu implements Listener {
                 }
             }
 
-            meta.displayName(AMP.deserialize(apply(name, senderName, dimension, region)));
+            // ✅ no-italic unless &o
+            meta.displayName(legacyToComponentNoItalic(apply(name, senderName, dimension, region)));
 
-            List<String> loreLines = colorLore(applyAll(lore, senderName, dimension, region));
-            meta.lore(loreLines == null ? null : loreLines.stream().map(AMP::deserialize).toList());
+            List<String> loreLines = applyAll(lore, senderName, dimension, region);
+            List<Component> loreComps = new ArrayList<>(loreLines.size());
+            for (String line : loreLines) loreComps.add(legacyToComponentNoItalic(line));
+            meta.lore(loreComps.isEmpty() ? null : loreComps);
+
             skull.setItemMeta(meta);
         }
         return skull;
@@ -725,10 +746,14 @@ public final class ConfirmRequestMenu implements Listener {
             pdc.set(KEY_DIM_NETHER, PersistentDataType.STRING, netherMat);
             pdc.set(KEY_DIM_END, PersistentDataType.STRING, endMat);
 
-            meta.displayName(AMP.deserialize(apply(name, senderName, dimension, region)));
+            // ✅ no-italic unless &o
+            meta.displayName(legacyToComponentNoItalic(apply(name, senderName, dimension, region)));
 
-            var loreLines = colorLore(applyAll(lore, senderName, dimension, region)); // List<String>
-            meta.lore(loreLines == null ? null : loreLines.stream().map(AMP::deserialize).toList());
+            List<String> loreLines = applyAll(lore, senderName, dimension, region);
+            List<Component> loreComps = new ArrayList<>(loreLines.size());
+            for (String line : loreLines) loreComps.add(legacyToComponentNoItalic(line));
+            meta.lore(loreComps.isEmpty() ? null : loreComps);
+
             it.setItemMeta(meta);
         }
         return it;
@@ -742,10 +767,14 @@ public final class ConfirmRequestMenu implements Listener {
         ItemStack it = new ItemStack(mat);
         ItemMeta meta = it.getItemMeta();
         if (meta != null) {
-            meta.displayName(AMP.deserialize(apply(name, senderName, dimension, region)));
+            // ✅ no-italic unless &o
+            meta.displayName(legacyToComponentNoItalic(apply(name, senderName, dimension, region)));
 
-            var loreLines = colorLore(applyAll(lore, senderName, dimension, region)); // List<String>
-            meta.lore(loreLines == null ? null : loreLines.stream().map(AMP::deserialize).toList());
+            List<String> loreLines = applyAll(lore, senderName, dimension, region);
+            List<Component> loreComps = new ArrayList<>(loreLines.size());
+            for (String line : loreLines) loreComps.add(legacyToComponentNoItalic(line));
+            meta.lore(loreComps.isEmpty() ? null : loreComps);
+
             it.setItemMeta(meta);
         }
         return it;
@@ -775,12 +804,12 @@ public final class ConfirmRequestMenu implements Listener {
         ItemStack it = new ItemStack(mat);
         ItemMeta meta = it.getItemMeta();
         if (meta != null) {
-            meta.displayName(AMP.deserialize(config.color(replaceAll(name, repl))));
+            // ✅ no-italic unless &o
+            meta.displayName(legacyToComponentNoItalic(replaceAll(name, repl)));
 
             List<Component> outLore = new ArrayList<>();
             for (String l : lore) {
-                String line = config.color(replaceAll(l, repl));
-                outLore.add(AMP.deserialize(line));
+                outLore.add(legacyToComponentNoItalic(replaceAll(l, repl)));
             }
             if (!outLore.isEmpty()) meta.lore(outLore);
 
@@ -995,12 +1024,6 @@ public final class ConfirmRequestMenu implements Listener {
     private List<String> applyAll(List<String> lore, String sender, String dimension, String region) {
         List<String> out = new ArrayList<>();
         for (String l : lore) out.add(apply(l, sender, dimension, region));
-        return out;
-    }
-
-    private List<String> colorLore(List<String> lore) {
-        List<String> out = new ArrayList<>();
-        for (String l : lore) out.add(config.color(l));
         return out;
     }
 

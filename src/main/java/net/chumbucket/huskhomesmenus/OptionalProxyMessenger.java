@@ -43,6 +43,28 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
     // One-shot PlayerList ALL callback(s)
     private final List<Consumer<List<String>>> playerListAllCallbacks = Collections.synchronizedList(new ArrayList<>());
 
+    // Reload command
+    public void disable() {
+        if (!enabled) return;
+
+        try {
+            plugin.getServer().getMessenger().unregisterIncomingPluginChannel(plugin, CHANNEL_MODERN, this);
+        } catch (Throwable ignored) { }
+
+        try {
+            plugin.getServer().getMessenger().unregisterIncomingPluginChannel(plugin, CHANNEL_LEGACY, this);
+        } catch (Throwable ignored) { }
+
+        try {
+            plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin, CHANNEL_MODERN);
+        } catch (Throwable ignored) { }
+
+        try {
+            plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin, CHANNEL_LEGACY);
+        } catch (Throwable ignored) { }
+
+        enabled = false;
+    }
     // =========================================================
     // ✅ Dimension response sink
     // =========================================================

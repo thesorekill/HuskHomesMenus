@@ -3,7 +3,7 @@
 # ┃               Copyright © 2025 Sorekill               ┃
 # ┃    Licensed under the Apache License, Version 2.0.    ┃
 # ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-# ┣╸ Version: 1.0.0
+# ┣╸ Version: 1.1.0
 # ┣╸ Purpose: GUI + toggles + proxy-safe messaging for HuskHomes TPA/TPAHERE
 # ┗╸ Notes: Designed for proxy networks (Velocity/Bungee/Waterfall)
 
@@ -11,6 +11,7 @@
 # │  PERMISSIONS                                                 │
 # └──────────────────────────────────────────────────────────────┘
 # Command permissions
+#   huskhomesmenus.reload        -> /
 #   huskhomesmenus.tpa           -> /tpa 
 #   huskhomesmenus.tpahere       -> /tpahere 
 #   huskhomesmenus.tpaccept      -> /tpaccept 

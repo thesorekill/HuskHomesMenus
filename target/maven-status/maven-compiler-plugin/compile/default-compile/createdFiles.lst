@@ -1,4 +1,5 @@
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu.class
+net\chumbucket\huskhomesmenus\HHMCommand.class
 net\chumbucket\huskhomesmenus\TpaHereCommand.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$1.class
 net\chumbucket\huskhomesmenus\TeleportCommandInterceptListener.class

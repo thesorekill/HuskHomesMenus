@@ -1,7 +1,7 @@
 # HuskHomesMenus
 # © 2025 Sorekill — Apache-2.0
 name: HuskHomesMenus
-version: 1.0.0
+version: 1.1.0
 main: net.chumbucket.huskhomesmenus.HuskHomesMenus
 api-version: 1.21
 
@@ -9,6 +9,10 @@ depend: [HuskHomes]
 softdepend: [PlaceholderAPI, ProtocolLib]
 
 commands:
+  hhm:
+    description: Reloads the plugin
+    usage: /hhm reload
+    permission: huskhomesmenus.reload
   tpa:
     description: Send a teleport request to a player (HuskHomesMenus wrapper)
     usage: /tpa <player>
@@ -59,6 +63,11 @@ permissions:
       huskhomesmenus.tpdeny: true
       huskhomesmenus.tpmenu: true
       huskhomesmenus.tpauto: true
+      huskhomesmenus.reload: true
+
+  huskhomesmenus.reload:
+    description: Reloads the plugin
+    default: false
 
   huskhomesmenus.tpatoggle:
     description: Allows toggling /tpa request reception
