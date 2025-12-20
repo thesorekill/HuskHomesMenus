@@ -40,6 +40,7 @@ HuskHomesMenus provides GUI-enhanced wrappers and player preference toggles for 
 
 | Command | Usage | Description | Permission |
 |--------|---------|------------|------------|
+| `/hmm reload` | `/hmm reload` | Reloads the plugin | `huskhomesmenus.reload` |
 | `/tpa` | `/tpa [player]` | Send a teleport request to another player | `huskhomesmenus.tpa` |
 | `/tpahere` | `/tpahere [player]` | Ask a player to teleport to you | `huskhomesmenus.tpahere` |
 | `/tpaccept` | `/tpaccept [player]` | Accept the most recent or a specific teleport request | `huskhomesmenus.tpaccept` |
@@ -55,6 +56,7 @@ All permissions default to **false** unless otherwise noted and are intended for
 
 | Permission | Description | Default |
 |-----------|------------|---------|
+| `huskhomesmenus.reload` | Allows `/hmm reload` and reloads the plugin | false |
 | `huskhomesmenus.tpa` | Allows sending `/tpa` requests | false |
 | `huskhomesmenus.tpahere` | Allows sending `/tpahere` requests | false |
 | `huskhomesmenus.tpaccept` | Allows accepting teleport requests | false |
