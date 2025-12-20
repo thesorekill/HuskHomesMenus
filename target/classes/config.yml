@@ -191,6 +191,8 @@ menus:
   confirm_request:
     # Enables the menu
     enabled: true
+    # If they close the menu it just denies the request.
+    auto_deny_on_close: true
     # Menu title used when the plugin can't determine a request type (fallback)
     title: "&7CONFIRM REQUEST"
 

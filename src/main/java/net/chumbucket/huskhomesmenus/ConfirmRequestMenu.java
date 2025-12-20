@@ -15,6 +15,7 @@ import org.bukkit.scheduler.BukkitRunnable;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class ConfirmRequestMenu implements Listener {
 
@@ -28,6 +29,25 @@ public final class ConfirmRequestMenu implements Listener {
     private final NamespacedKey KEY_DIM_OVERWORLD;
     private final NamespacedKey KEY_DIM_NETHER;
     private final NamespacedKey KEY_DIM_END;
+
+    // ------------------------------------------------------------------
+    // NEW: session tracking so "close menu" can auto-deny
+    // ------------------------------------------------------------------
+    private static final class Session {
+        final String senderName;
+        final RequestType type;
+        volatile boolean acted;
+
+        Session(String senderName, RequestType type) {
+            this.senderName = senderName;
+            this.type = type;
+            this.acted = false;
+        }
+    }
+
+    // viewerUuid -> session
+    private final ConcurrentHashMap<UUID, Session> sessions = new ConcurrentHashMap<>();
+    // ------------------------------------------------------------------
 
     public ConfirmRequestMenu(HuskHomesMenus plugin, HHMConfig config, ProxyPlayerCache playerCache) {
         this.plugin = plugin;
@@ -136,6 +156,9 @@ public final class ConfirmRequestMenu implements Listener {
                     Map.of("%sender%", safe(senderName), "%dimension_name%", safe(dimension), "%region%", safe(region)));
             if (slot >= 0 && slot < inv.getSize()) inv.setItem(slot, item);
         }
+
+        // NEW: store session before opening
+        sessions.put(target.getUniqueId(), new Session(senderName, type));
 
         target.openInventory(inv);
 
@@ -398,6 +421,56 @@ public final class ConfirmRequestMenu implements Listener {
     }
 
     // ---------------------------
+    // NEW: Auto-deny on close
+    // ---------------------------
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onClose(InventoryCloseEvent e) {
+        if (!(e.getPlayer() instanceof Player p)) return;
+
+        // Only our menus
+        if (!(e.getInventory().getHolder() instanceof ConfirmHolder)) return;
+
+        // If disabled in config, do nothing
+        if (!config.isEnabled("menus.confirm_request.auto_deny_on_close.enabled", true)) {
+            sessions.remove(p.getUniqueId());
+            return;
+        }
+
+        Session s = sessions.get(p.getUniqueId());
+        if (s == null) return;
+
+        if (s.acted) {
+            sessions.remove(p.getUniqueId());
+            return;
+        }
+
+        sessions.remove(p.getUniqueId());
+
+        // Resolve sender into a new variable (this one CAN be reassigned)
+        String resolvedSender = s.senderName;
+        if (resolvedSender == null || resolvedSender.isBlank()) {
+            PendingRequests.Pending last = PendingRequests.get(p.getUniqueId());
+            if (last != null) resolvedSender = last.senderName();
+        }
+
+        if (resolvedSender == null || resolvedSender.isBlank()) return;
+
+        // Make a final copy for the lambda
+        final String senderFinal = resolvedSender;
+
+        // prevent intercept loop
+        PendingRequests.bypassForMs(p.getUniqueId(), 1200);
+
+        // cleanup pending
+        PendingRequests.remove(p.getUniqueId(), senderFinal);
+
+        // deny via HuskHomes
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            Bukkit.dispatchCommand(p, "huskhomes:tpdeny " + senderFinal);
+        });
+    }
+
+    // ---------------------------
     // Click + Drag handling
     // ---------------------------
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
@@ -448,6 +521,10 @@ public final class ConfirmRequestMenu implements Listener {
     private void handleButton(Player p, ConfigurationSection section, ConfirmHolder holder, boolean doAccept) {
         if (section == null) return;
 
+        // NEW: mark acted so close event doesn't auto-deny
+        Session s = sessions.get(p.getUniqueId());
+        if (s != null) s.acted = true;
+
         ConfigurationSection click = section.getConfigurationSection("click");
         if (click != null) {
             String snd = click.getString("sound", "");
@@ -471,6 +548,10 @@ public final class ConfirmRequestMenu implements Listener {
 
             if (sender != null && !sender.isBlank()) PendingRequests.remove(p.getUniqueId(), sender);
             else PendingRequests.clear(p.getUniqueId());
+
+            // NEW: cleanup session
+            sessions.remove(p.getUniqueId());
+
             if (close) p.closeInventory();
         }, 1L);
     }
