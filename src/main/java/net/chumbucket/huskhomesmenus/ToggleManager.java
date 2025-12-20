@@ -11,15 +11,17 @@ public final class ToggleManager {
     private final NamespacedKey keyTpa;
     private final NamespacedKey keyTpahere;
 
-    // NEW: toggle for whether to use the GUI menu for TP requests
+    // toggle for whether to use the GUI menu for TP requests (default ON)
     private final NamespacedKey keyTpMenu;
+
+    // ✅ auto-accept incoming /tpa requests (default OFF)
+    private final NamespacedKey keyTpAuto;
 
     public ToggleManager(JavaPlugin plugin) {
         this.keyTpa = new NamespacedKey(plugin, "tpa_on");
         this.keyTpahere = new NamespacedKey(plugin, "tpahere_on");
-
-        // NEW
         this.keyTpMenu = new NamespacedKey(plugin, "tpmenu_on");
+        this.keyTpAuto = new NamespacedKey(plugin, "tpauto_on");
     }
 
     public boolean isTpaOn(Player p) {
@@ -30,9 +32,14 @@ public final class ToggleManager {
         return getFlagDefaultTrue(p, keyTpahere);
     }
 
-    // NEW: default ON
+    // default ON (your current behavior)
     public boolean isTpMenuOn(Player p) {
         return getFlagDefaultTrue(p, keyTpMenu);
+    }
+
+    // ✅ default OFF
+    public boolean isTpAutoOn(Player p) {
+        return getFlagDefaultFalse(p, keyTpAuto);
     }
 
     public boolean toggleTpa(Player p) {
@@ -47,22 +54,37 @@ public final class ToggleManager {
         return now;
     }
 
-    // NEW
     public boolean toggleTpMenu(Player p) {
         boolean now = !isTpMenuOn(p);
         setFlag(p, keyTpMenu, now);
         return now;
     }
 
-    // NEW: helper setter (optional but useful for future /tpmenu on|off)
+    public boolean toggleTpAuto(Player p) {
+        boolean now = !isTpAutoOn(p);
+        setFlag(p, keyTpAuto, now);
+        return now;
+    }
+
     public void setTpMenuOn(Player p, boolean on) {
         setFlag(p, keyTpMenu, on);
+    }
+
+    public void setTpAutoOn(Player p, boolean on) {
+        setFlag(p, keyTpAuto, on);
     }
 
     private boolean getFlagDefaultTrue(Player p, NamespacedKey key) {
         PersistentDataContainer pdc = p.getPersistentDataContainer();
         Byte stored = pdc.get(key, PersistentDataType.BYTE);
         if (stored == null) return true; // default ON
+        return stored == (byte) 1;
+    }
+
+    private boolean getFlagDefaultFalse(Player p, NamespacedKey key) {
+        PersistentDataContainer pdc = p.getPersistentDataContainer();
+        Byte stored = pdc.get(key, PersistentDataType.BYTE);
+        if (stored == null) return false; // ✅ default OFF
         return stored == (byte) 1;
     }
 

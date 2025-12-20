@@ -10,12 +10,14 @@
 # │  PERMISSIONS                                                 │
 # └──────────────────────────────────────────────────────────────┘
 # Command permissions
-#   huskhomesmenus.tpa         -> /tpa 
-#   huskhomesmenus.tpahere     -> /tpahere 
-#   huskhomesmenus.tpaccept    -> /tpaccept 
-#   huskhomesmenus.tpdeny      -> /tpdeny 
-#   huskhomesmenus.tpatoggle   -> /tpatoggle 
+#   huskhomesmenus.tpa           -> /tpa 
+#   huskhomesmenus.tpahere       -> /tpahere 
+#   huskhomesmenus.tpaccept      -> /tpaccept 
+#   huskhomesmenus.tpdeny        -> /tpdeny 
+#   huskhomesmenus.tpatoggle     -> /tpatoggle 
 #   huskhomesmenus.tpaheretoggle -> /tpaheretoggle 
+#   huskhomesmenus.tpmenu        -> /tpmenu
+#   huskhomesmenus.tpauto        -> /tpauto
 
 # ┌──────────────────────────────────────────────────────────────┐
 # │  PLACEHOLDERS (If you have PlaceholderAPI Installed)         │
@@ -28,22 +30,31 @@
 # 1) Raw booleans (returns "true" / "false")
 #   %huskhomesmenus_tpa%           -> true/false 
 #   %huskhomesmenus_tpahere%       -> true/false
+#   %huskhomesmenus_tpmenu%        -> true/false
 #
 # 2) Text (returns "ON" / "OFF")
 #   %huskhomesmenus_tpa_text%      -> ON/OFF
 #   %huskhomesmenus_tpahere_text%  -> ON/OFF
+#   %huskhomesmenus_tpmenu_text%   -> ON/OFF
 #
 # 3) Icons (returns "✔" / "✘")
 #   %huskhomesmenus_tpa_icon%      -> ✔/✘
 #   %huskhomesmenus_tpahere_icon%  -> ✔/✘
+#   %huskhomesmenus_tpmenu_icon%   -> ✔/✘
 #
 # 4) Pretty (colored & bold; returns "&a&lON" or "&c&lOFF" after colorization)
 #   %huskhomesmenus_tpa_pretty%      
-#   %huskhomesmenus_tpahere_pretty% 
+#   %huskhomesmenus_tpahere_pretty%
+#   %huskhomesmenus_tpmenu_pretty%
+#   %huskhomesmenus_tpauto_pretty%
 #
-# 5) Combined status line (colored)
+# 5) Combined status line tpas (colored)
 #   %huskhomesmenus_requests_pretty%
 #     -> "TPA: ON/OFF | TPAHERE: ON/OFF" (with colors)
+#
+# 6) Combined status line (colored)
+#   %huskhomesmenus_all_pretty%
+#     -> "TPA: ON/OFF | TPAHERE: ON/OFF | TPMenu: ON/OFF | TPAuto: ON/OFF" (with colors)
 #
 
 # Name of the server (if proxy enabled it should match the proxy name)
@@ -106,6 +117,11 @@ messages:
     tpahere_status_line:
       enabled: true
       text: "%color%TPAHere requests: %state%"
+
+    # Format for the TPAuto status line.
+    tpauto_status_line:
+      enabled: true
+      text: "%color%Teleport Auto Accept: %state%"
 
     # Format for the TPMenu status line.
     tpmenu_status_line:

@@ -13,12 +13,14 @@ import java.util.UUID;
 
 public final class TeleportRequestToggleListener implements Listener {
 
+    private final HuskHomesMenus plugin;
     private final ToggleManager toggles;
     private final OptionalProxyMessenger messenger;
     private final HHMConfig config;
     private final boolean debug;
 
-    public TeleportRequestToggleListener(ToggleManager toggles, OptionalProxyMessenger messenger, HHMConfig config) {
+    public TeleportRequestToggleListener(HuskHomesMenus plugin, ToggleManager toggles, OptionalProxyMessenger messenger, HHMConfig config) {
+        this.plugin = plugin;
         this.toggles = toggles;
         this.messenger = messenger;
         this.config = config;
@@ -72,8 +74,29 @@ public final class TeleportRequestToggleListener implements Listener {
                 }
             }
 
-            // ✅ TPMENU TOGGLE: if target disabled the GUI menu, let HuskHomes handle it normally (do NOT cancel)
-            // (No other logic removed; we simply early-return before any menu opening code elsewhere)
+            // ✅ TPAUTO: auto-accept incoming /tpa (NO MENU)
+            if (type == ReqType.TPA && toggles.isTpAutoOn(target)) {
+                if (requesterName != null && !requesterName.isBlank()) {
+                    final String requesterFinal = requesterName;
+
+                    // prevent menu intercept loops
+                    PendingRequests.bypassForMs(target.getUniqueId(), 1200);
+
+                    Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                        try {
+                            Bukkit.dispatchCommand(target, "huskhomes:tpaccept " + requesterFinal);
+                        } catch (Throwable ignored) { }
+                        PendingRequests.remove(target.getUniqueId(), requesterFinal);
+                    }, 1L);
+
+                    if (debug) Bukkit.getLogger().info("tpauto ON for " + target.getName() + "; auto-accepted TPA from " + requesterFinal);
+                } else {
+                    if (debug) Bukkit.getLogger().info("tpauto ON but requesterName unresolved; cannot auto-accept");
+                }
+                return; // always skip menu when tpauto is ON
+            }
+
+            // ✅ TPMENU TOGGLE: if target disabled the GUI menu, do nothing (HuskHomes handles normally)
             if (!toggles.isTpMenuOn(target)) {
                 if (debug) Bukkit.getLogger().info("tpmenu is OFF for " + target.getName() + "; skipping menu");
                 return;

@@ -47,10 +47,11 @@ public final class HuskHomesMenus extends JavaPlugin {
         safeSetExecutor("tpatoggle", toggleCommands);
         safeSetExecutor("tpaheretoggle", toggleCommands);
         safeSetExecutor("tpmenu", toggleCommands);
+        safeSetExecutor("tpauto", toggleCommands); // ✅ NEW
 
         // Toggle enforcement (and cross-server denial messaging)
         Bukkit.getPluginManager().registerEvents(
-                new TeleportRequestToggleListener(toggleManager, messenger, config),
+                new TeleportRequestToggleListener(this, toggleManager, messenger, config), // ✅ updated ctor
                 this
         );
 

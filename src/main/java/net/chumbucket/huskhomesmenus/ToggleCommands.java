@@ -37,8 +37,13 @@ public final class ToggleCommands implements CommandExecutor {
                 sendTpMenuStatus(p, on);
                 return true;
             }
+            case "tpauto" -> {
+                boolean on = toggles.toggleTpAuto(p);
+                sendTpAutoStatus(p, on);
+                return true;
+            }
             default -> {
-                return false; // (unchanged behavior)
+                return false; // unchanged behavior
             }
         }
     }
@@ -60,7 +65,7 @@ public final class ToggleCommands implements CommandExecutor {
         p.sendMessage(config.prefix() + config.color(template));
     }
 
-    // NEW: TPMenu status line
+    // Existing TPMenu status line (unchanged)
     private void sendTpMenuStatus(Player p, boolean on) {
         if (!config.isEnabled("messages.toggles.show_status_lines.enabled", true)) return;
 
@@ -69,6 +74,23 @@ public final class ToggleCommands implements CommandExecutor {
 
         String template = config.raw(basePath + ".text",
                 "%color%Teleport Menu: %state%");
+
+        template = template
+                .replace("%color%", on ? "&a" : "&c")
+                .replace("%state%", on ? "&lON" : "&lOFF");
+
+        p.sendMessage(config.prefix() + config.color(template));
+    }
+
+    // ✅ NEW: TPAuto status line
+    private void sendTpAutoStatus(Player p, boolean on) {
+        if (!config.isEnabled("messages.toggles.show_status_lines.enabled", true)) return;
+
+        final String basePath = "messages.toggles.tpauto_status_line";
+        if (!config.isEnabled(basePath + ".enabled", true)) return;
+
+        String template = config.raw(basePath + ".text",
+                "%color%Auto Accept TPA: %state%");
 
         template = template
                 .replace("%color%", on ? "&a" : "&c")

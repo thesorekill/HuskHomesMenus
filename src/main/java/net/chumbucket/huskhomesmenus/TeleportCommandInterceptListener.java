@@ -12,8 +12,6 @@ public final class TeleportCommandInterceptListener implements Listener {
 
     private final ConfirmRequestMenu menu;
     private final HHMConfig config;
-
-    // NEW
     private final ToggleManager toggles;
 
     public TeleportCommandInterceptListener(ConfirmRequestMenu menu, HHMConfig config, ToggleManager toggles) {
@@ -26,13 +24,10 @@ public final class TeleportCommandInterceptListener implements Listener {
     public void onCommand(PlayerCommandPreprocessEvent e) {
         Player p = e.getPlayer();
 
-        // If the GUI just triggered a real HuskHomes command, let it through (prevents loop)
         if (PendingRequests.isBypassActive(p.getUniqueId())) return;
-
-        // If the confirm menu is disabled, DO NOT intercept; let HuskHomes handle commands normally
         if (!isConfirmMenuEnabled()) return;
 
-        // NEW: if player disabled menu, DO NOT intercept /tpaccept or /tpdeny
+        // if player disabled menu, DO NOT intercept /tpaccept or /tpdeny
         if (toggles != null && !toggles.isTpMenuOn(p)) return;
 
         String msg = e.getMessage();
@@ -47,11 +42,9 @@ public final class TeleportCommandInterceptListener implements Listener {
         String first = parts[0].substring(1);
         if (first.isBlank()) return;
 
-        // Strip namespace: "huskhomes:tpaccept" -> "tpaccept"
         String label = first;
         if (label.contains(":")) label = label.split(":", 2)[1];
 
-        // Handle "/huskhomes tpaccept" and "/hh tpaccept"
         String action = label.toLowerCase();
         int argIndex = 1;
 
@@ -64,7 +57,6 @@ public final class TeleportCommandInterceptListener implements Listener {
         boolean isAccept = action.equals("tpaccept");
         boolean isDeny = action.equals("tpdeny") || action.equals("tpdecline");
 
-        // also allow namespaced variants that some setups pass through as full strings
         if (!isAccept && !isDeny) {
             if (action.startsWith("tpaccept")) isAccept = true;
             if (action.startsWith("tpdeny") || action.startsWith("tpdecline")) isDeny = true;
@@ -72,13 +64,10 @@ public final class TeleportCommandInterceptListener implements Listener {
 
         if (!isAccept && !isDeny) return;
 
-        // Cancel HuskHomes handling; open our menu instead
         e.setCancelled(true);
 
-        // Optional arg (requester name)
         String requesterName = (parts.length > argIndex) ? parts[argIndex] : null;
 
-        // Fall back to last remembered request for missing arg
         if (requesterName == null || requesterName.isBlank()) {
             PendingRequests.Pending pending = PendingRequests.get(p.getUniqueId());
             if (pending == null) {
@@ -88,15 +77,12 @@ public final class TeleportCommandInterceptListener implements Listener {
             requesterName = pending.senderName();
         }
 
-        // ✅ Correct type resolution:
-        // 1) If command included a requester name, prefer the pending entry for that requester
-        // 2) Otherwise fall back to the "last" pending entry
         ConfirmRequestMenu.RequestType type = ConfirmRequestMenu.RequestType.TPA;
 
         PendingRequests.Pending byName = PendingRequests.get(p.getUniqueId(), requesterName);
         if (byName != null && byName.type() != null) {
             type = byName.type();
-            requesterName = byName.senderName(); // keep canonical casing if stored
+            requesterName = byName.senderName();
         } else {
             PendingRequests.Pending last = PendingRequests.get(p.getUniqueId());
             if (last != null && last.type() != null) {
@@ -108,7 +94,6 @@ public final class TeleportCommandInterceptListener implements Listener {
     }
 
     private boolean isConfirmMenuEnabled() {
-        // uses config path menus.confirm_request.enabled (default true if missing)
         ConfigurationSection sec = config.section("menus.confirm_request");
         if (sec == null) return true;
         return sec.getBoolean("enabled", true);
