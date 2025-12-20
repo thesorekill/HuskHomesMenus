@@ -40,8 +40,8 @@ HuskHomesMenus provides GUI-enhanced wrappers and player preference toggles for 
 
 | Command | Usage | Description | Permission |
 |--------|---------|------------|------------|
-| `/tpa` | `/tpa <player>` | Send a teleport request to another player | `huskhomesmenus.tpa` |
-| `/tpahere` | `/tpahere <player>` | Ask a player to teleport to you | `huskhomesmenus.tpahere` |
+| `/tpa` | `/tpa [player]` | Send a teleport request to another player | `huskhomesmenus.tpa` |
+| `/tpahere` | `/tpahere [player]` | Ask a player to teleport to you | `huskhomesmenus.tpahere` |
 | `/tpaccept` | `/tpaccept [player]` | Accept the most recent or a specific teleport request | `huskhomesmenus.tpaccept` |
 | `/tpdeny` | `/tpdeny [player]` | Deny the most recent or a specific teleport request | `huskhomesmenus.tpdeny` |
 | `/tpatoggle` | `/tpatoggle` | Toggle receiving `/tpa` requests | `huskhomesmenus.tpatoggle` |
