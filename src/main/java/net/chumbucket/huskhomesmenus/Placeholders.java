@@ -1,20 +1,21 @@
 package net.chumbucket.huskhomesmenus;
 
 import me.clip.placeholderapi.expansion.PlaceholderExpansion;
-import org.bukkit.ChatColor;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 public final class Placeholders extends PlaceholderExpansion {
 
     private final JavaPlugin plugin;
     private final ToggleManager toggles;
-    private final HHMConfig config;
+
+    private static final LegacyComponentSerializer AMP = LegacyComponentSerializer.legacyAmpersand();
 
     public Placeholders(JavaPlugin plugin, ToggleManager toggles, HHMConfig config) {
         this.plugin = plugin;
         this.toggles = toggles;
-        this.config = config;
     }
 
     @Override
@@ -29,7 +30,7 @@ public final class Placeholders extends PlaceholderExpansion {
 
     @Override
     public String getVersion() {
-        return plugin.getDescription().getVersion();
+        return plugin.getPluginMeta().getVersion();
     }
 
     @Override
@@ -122,6 +123,6 @@ public final class Placeholders extends PlaceholderExpansion {
     }
 
     private String color(String s) {
-        return ChatColor.translateAlternateColorCodes('&', s);
+        return AMP.serialize(AMP.deserialize(s));
     }
 }

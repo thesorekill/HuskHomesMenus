@@ -1,11 +1,12 @@
 package net.chumbucket.huskhomesmenus;
 
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
+
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 /**
  * Cross-server /tpdeny wrapper.
@@ -17,6 +18,8 @@ public final class TpDenyCommand implements CommandExecutor {
     private final ConfirmRequestMenu menu;
     private final ToggleManager toggles;
 
+    private static final LegacyComponentSerializer AMP = LegacyComponentSerializer.legacyAmpersand();
+    
     public TpDenyCommand(ConfirmRequestMenu menu, ToggleManager toggles) {
         this.menu = menu;
         this.toggles = toggles;
@@ -25,12 +28,12 @@ public final class TpDenyCommand implements CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
         if (!(sender instanceof Player p)) {
-            sender.sendMessage(ChatColor.RED + "Players only.");
+            sender.sendMessage(AMP.deserialize("&cPlayers only."));
             return true;
         }
 
         if (args.length > 1) {
-            p.sendMessage(ChatColor.YELLOW + "Usage: /tpdeny [player]");
+            p.sendMessage(AMP.deserialize("&eUsage: /tpdeny [player]"));
             return true;
         }
 
@@ -45,7 +48,7 @@ public final class TpDenyCommand implements CommandExecutor {
 
             boolean handled = Bukkit.dispatchCommand(p, command);
             if (!handled) {
-                p.sendMessage(ChatColor.RED + "Failed to run HuskHomes /tpdeny (huskhomes:tpdeny).");
+                p.sendMessage(AMP.deserialize("&cFailed to run HuskHomes /tpdeny (huskhomes:tpdeny)."));
             }
             return true;
         }
@@ -70,7 +73,7 @@ public final class TpDenyCommand implements CommandExecutor {
         // Otherwise use last remembered request
         PendingRequests.Pending pending = PendingRequests.get(p.getUniqueId());
         if (pending == null) {
-            p.sendMessage(ChatColor.RED + "You have no pending teleport requests.");
+            p.sendMessage(AMP.deserialize("&cYou have no pending teleport requests."));
             return true;
         }
 

@@ -1,8 +1,9 @@
 package net.chumbucket.huskhomesmenus;
 
-import org.bukkit.ChatColor;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.plugin.java.JavaPlugin;
+
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 /**
  * Lightweight config wrapper for HuskHomesMenus.
@@ -11,6 +12,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 public final class HHMConfig {
 
     private final JavaPlugin plugin;
+
+    private static final LegacyComponentSerializer AMP = LegacyComponentSerializer.legacyAmpersand();
 
     public HHMConfig(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -46,7 +49,7 @@ public final class HHMConfig {
 
     public String color(String s) {
         if (s == null) return "";
-        return ChatColor.translateAlternateColorCodes('&', s);
+        return AMP.serialize(AMP.deserialize(s));
     }
 
     public ConfigurationSection section(String path) {

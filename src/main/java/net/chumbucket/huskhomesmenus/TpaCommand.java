@@ -1,16 +1,19 @@
 package net.chumbucket.huskhomesmenus;
 
 import org.bukkit.Bukkit;
-import org.bukkit.ChatColor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+
 public final class TpaCommand implements CommandExecutor {
 
     private final ToggleManager toggles;
     private final HHMConfig config;
+
+    private static final LegacyComponentSerializer AMP = LegacyComponentSerializer.legacyAmpersand();
 
     public TpaCommand(ToggleManager toggles, HHMConfig config) {
         this.toggles = toggles;
@@ -20,12 +23,12 @@ public final class TpaCommand implements CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command cmd, String label, String[] args) {
         if (!(sender instanceof Player player)) {
-            sender.sendMessage(ChatColor.RED + "Players only.");
+            sender.sendMessage(AMP.deserialize("&cPlayers only."));
             return true;
         }
 
         if (args.length != 1) {
-            player.sendMessage(ChatColor.YELLOW + "Usage: /tpa <player>");
+            player.sendMessage(AMP.deserialize("&eUsage: /tpa <player>"));
             return true;
         }
 
@@ -51,7 +54,7 @@ public final class TpaCommand implements CommandExecutor {
 
         boolean handled = Bukkit.dispatchCommand(player, "huskhomes:tpa " + targetName);
         if (!handled) {
-            player.sendMessage(config.prefix() + ChatColor.RED + "Failed to run HuskHomes /tpa.");
+            player.sendMessage(AMP.deserialize(config.prefix()).append(AMP.deserialize("&cFailed to run HuskHomes /tpa.")));;
         }
         return true;
     }

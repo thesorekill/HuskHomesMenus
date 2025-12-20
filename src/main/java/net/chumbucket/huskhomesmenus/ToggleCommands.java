@@ -1,13 +1,16 @@
 package net.chumbucket.huskhomesmenus;
 
-import org.bukkit.ChatColor;
 import org.bukkit.command.*;
 import org.bukkit.entity.Player;
+
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 public final class ToggleCommands implements CommandExecutor {
 
     private final ToggleManager toggles;
     private final HHMConfig config;
+
+    private static final LegacyComponentSerializer AMP = LegacyComponentSerializer.legacyAmpersand();
 
     public ToggleCommands(ToggleManager toggles, HHMConfig config) {
         this.toggles = toggles;
@@ -17,7 +20,7 @@ public final class ToggleCommands implements CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!(sender instanceof Player p)) {
-            sender.sendMessage(ChatColor.RED + "Players only.");
+            sender.sendMessage(AMP.deserialize("&cPlayers only."));
             return true;
         }
 
@@ -102,6 +105,6 @@ public final class ToggleCommands implements CommandExecutor {
     // kept for compatibility with existing patterns
     @SuppressWarnings("unused")
     private String color(String s) {
-        return ChatColor.translateAlternateColorCodes('&', s);
+        return AMP.serialize(AMP.deserialize(s));
     }
 }

@@ -1,6 +1,5 @@
 package net.chumbucket.huskhomesmenus;
 
-import org.bukkit.ChatColor;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -8,11 +7,16 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+
 public final class TeleportCommandInterceptListener implements Listener {
 
     private final ConfirmRequestMenu menu;
     private final HHMConfig config;
     private final ToggleManager toggles;
+
+    private static final LegacyComponentSerializer AMP = LegacyComponentSerializer.legacyAmpersand();
+
 
     public TeleportCommandInterceptListener(ConfirmRequestMenu menu, HHMConfig config, ToggleManager toggles) {
         this.menu = menu;
@@ -71,7 +75,7 @@ public final class TeleportCommandInterceptListener implements Listener {
         if (requesterName == null || requesterName.isBlank()) {
             PendingRequests.Pending pending = PendingRequests.get(p.getUniqueId());
             if (pending == null) {
-                p.sendMessage(ChatColor.RED + "You have no pending teleport requests.");
+                p.sendMessage(AMP.deserialize(config.prefix()).append(AMP.deserialize("&cYou have no pending teleport requests.")));
                 return;
             }
             requesterName = pending.senderName();

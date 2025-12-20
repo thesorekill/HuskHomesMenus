@@ -12,6 +12,10 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.scheduler.BukkitRunnable;
 
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.serializer.plain.PlainTextComponentSerializer;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
@@ -25,6 +29,9 @@ public final class ConfirmRequestMenu implements Listener {
     private final HHMConfig config;
     private final ProxyPlayerCache playerCache;
 
+    private static final LegacyComponentSerializer AMP = LegacyComponentSerializer.legacyAmpersand();
+    private static final PlainTextComponentSerializer PLAIN = PlainTextComponentSerializer.plainText();
+
     private final NamespacedKey KEY_DIM_ITEM;
     private final NamespacedKey KEY_DIM_OVERWORLD;
     private final NamespacedKey KEY_DIM_NETHER;
@@ -35,12 +42,10 @@ public final class ConfirmRequestMenu implements Listener {
     // ------------------------------------------------------------------
     private static final class Session {
         final String senderName;
-        final RequestType type;
         volatile boolean acted;
 
-        Session(String senderName, RequestType type) {
+        Session(String senderName) {
             this.senderName = senderName;
-            this.type = type;
             this.acted = false;
         }
     }
@@ -71,7 +76,7 @@ public final class ConfirmRequestMenu implements Listener {
         String title = config.color(menu.getString(titleKey, menu.getString("title", "&7CONFIRM REQUEST")));
 
         ConfirmHolder holder = new ConfirmHolder(senderName, type);
-        Inventory inv = Bukkit.createInventory(holder, rows * 9, title);
+        Inventory inv = Bukkit.createInventory(holder, rows * 9, AMP.deserialize(title));
 
         boolean senderLocal = (senderName != null && Bukkit.getPlayerExact(senderName) != null);
 
@@ -158,7 +163,7 @@ public final class ConfirmRequestMenu implements Listener {
         }
 
         // NEW: store session before opening
-        sessions.put(target.getUniqueId(), new Session(senderName, type));
+        sessions.put(target.getUniqueId(), new Session(senderName));
 
         target.openInventory(inv);
 
@@ -334,22 +339,38 @@ public final class ConfirmRequestMenu implements Listener {
 
             String safeDim = safe(dimensionValue);
 
-            if (meta.hasDisplayName()) {
-                meta.setDisplayName(config.color(meta.getDisplayName()
-                        .replace("%dimension_name%", safeDim)
-                        .replace("Loading...", safeDim)));
+            Component dn = meta.displayName();
+            if (dn != null) {
+                // get readable text from the existing component (drops color, keeps words)
+                String text = PLAIN.serialize(dn);
+
+                // do your replacements
+                text = text.replace("%dimension_name%", safeDim)
+                        .replace("Loading...", safeDim);
+
+                // re-apply your color formatting (& codes etc.)
+                meta.displayName(AMP.deserialize(config.color(text)));
             }
 
-            List<String> lore = meta.getLore();
+            List<Component> lore = meta.lore();
             if (lore != null) {
-                List<String> newLore = new ArrayList<>(lore.size());
-                for (String line : lore) {
-                    if (line == null) { newLore.add(null); continue; }
-                    newLore.add(config.color(line
-                            .replace("%dimension_name%", safeDim)
-                            .replace("Loading...", safeDim)));
+                List<Component> newLore = new ArrayList<>(lore.size());
+
+                for (Component lineComp : lore) {
+                    if (lineComp == null) { // usually won’t happen, but keeps parity with your old code
+                        newLore.add(null);
+                        continue;
+                    }
+
+                    String line = PLAIN.serialize(lineComp);
+
+                    line = line.replace("%dimension_name%", safeDim)
+                            .replace("Loading...", safeDim);
+
+                    newLore.add(AMP.deserialize(config.color(line)));
                 }
-                meta.setLore(newLore);
+
+                meta.lore(newLore);
             }
 
             PersistentDataContainer pdc = meta.getPersistentDataContainer();
@@ -398,21 +419,31 @@ public final class ConfirmRequestMenu implements Listener {
             ItemMeta meta = item.getItemMeta();
             if (meta == null) continue;
 
-            if (meta.hasDisplayName()) {
-                meta.setDisplayName(meta.getDisplayName()
+            Component dn = meta.displayName();
+            if (dn != null) {
+                String text = PLAIN.serialize(dn)
                         .replace("Loading...", regionValue)
-                        .replace("%region%", regionValue));
+                        .replace("%region%", regionValue);
+                meta.displayName(AMP.deserialize(config.color(text)));
             }
-            List<String> lore = meta.getLore();
+
+            List<Component> lore = meta.lore();
             if (lore != null && !lore.isEmpty()) {
-                List<String> newLore = new ArrayList<>(lore.size());
-                for (String line : lore) {
-                    if (line == null) newLore.add(null);
-                    else newLore.add(line
+                List<Component> newLore = new ArrayList<>(lore.size());
+
+                for (Component lineComp : lore) {
+                    if (lineComp == null) {
+                        newLore.add(null);
+                        continue;
+                    }
+
+                    String line = PLAIN.serialize(lineComp)
                             .replace("Loading...", regionValue)
-                            .replace("%region%", regionValue));
+                            .replace("%region%", regionValue);
+                    newLore.add(AMP.deserialize(config.color(line)));
                 }
-                meta.setLore(newLore);
+
+                meta.lore(newLore);
             }
 
             item.setItemMeta(meta);
@@ -576,7 +607,12 @@ public final class ConfirmRequestMenu implements Listener {
                 "huskhomes:tpyes"
         );
 
-        if (!ok) p.sendMessage(config.prefix() + ChatColor.RED + "Could not accept the request.");
+        if (!ok) {
+            p.sendMessage(
+                AMP.deserialize(config.prefix())
+                    .append(AMP.deserialize("&cCould not accept the request."))
+            );
+        }
     }
 
     private void runDeny(Player p, String sender, RequestType type) {
@@ -591,7 +627,12 @@ public final class ConfirmRequestMenu implements Listener {
                 "huskhomes:tpno"
         );
 
-        if (!ok) p.sendMessage(config.prefix() + ChatColor.RED + "Could not decline the request.");
+        if (!ok) {
+            p.sendMessage(
+                AMP.deserialize(config.prefix())
+                    .append(AMP.deserialize("&cCould not decline the request."))
+            );
+        }
     }
 
     // ---------------------------
@@ -631,8 +672,10 @@ public final class ConfirmRequestMenu implements Listener {
                 }
             }
 
-            meta.setDisplayName(apply(name, senderName, dimension, region));
-            meta.setLore(colorLore(applyAll(lore, senderName, dimension, region)));
+            meta.displayName(AMP.deserialize(apply(name, senderName, dimension, region)));
+
+            List<String> loreLines = colorLore(applyAll(lore, senderName, dimension, region));
+            meta.lore(loreLines == null ? null : loreLines.stream().map(AMP::deserialize).toList());
             skull.setItemMeta(meta);
         }
         return skull;
@@ -670,8 +713,10 @@ public final class ConfirmRequestMenu implements Listener {
             pdc.set(KEY_DIM_NETHER, PersistentDataType.STRING, netherMat);
             pdc.set(KEY_DIM_END, PersistentDataType.STRING, endMat);
 
-            meta.setDisplayName(apply(name, senderName, dimension, region));
-            meta.setLore(colorLore(applyAll(lore, senderName, dimension, region)));
+            meta.displayName(AMP.deserialize(apply(name, senderName, dimension, region)));
+
+            var loreLines = colorLore(applyAll(lore, senderName, dimension, region)); // List<String>
+            meta.lore(loreLines == null ? null : loreLines.stream().map(AMP::deserialize).toList());
             it.setItemMeta(meta);
         }
         return it;
@@ -685,8 +730,10 @@ public final class ConfirmRequestMenu implements Listener {
         ItemStack it = new ItemStack(mat);
         ItemMeta meta = it.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(apply(name, senderName, dimension, region));
-            meta.setLore(colorLore(applyAll(lore, senderName, dimension, region)));
+            meta.displayName(AMP.deserialize(apply(name, senderName, dimension, region)));
+
+            var loreLines = colorLore(applyAll(lore, senderName, dimension, region)); // List<String>
+            meta.lore(loreLines == null ? null : loreLines.stream().map(AMP::deserialize).toList());
             it.setItemMeta(meta);
         }
         return it;
@@ -716,11 +763,14 @@ public final class ConfirmRequestMenu implements Listener {
         ItemStack it = new ItemStack(mat);
         ItemMeta meta = it.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(config.color(replaceAll(name, repl)));
+            meta.displayName(AMP.deserialize(config.color(replaceAll(name, repl))));
 
-            List<String> outLore = new ArrayList<>();
-            for (String l : lore) outLore.add(config.color(replaceAll(l, repl)));
-            if (!outLore.isEmpty()) meta.setLore(outLore);
+            List<Component> outLore = new ArrayList<>();
+            for (String l : lore) {
+                String line = config.color(replaceAll(l, repl));
+                outLore.add(AMP.deserialize(line));
+            }
+            if (!outLore.isEmpty()) meta.lore(outLore);
 
             if (cmd > 0) meta.setCustomModelData(cmd);
 
