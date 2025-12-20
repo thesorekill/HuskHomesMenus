@@ -109,6 +109,7 @@ All options include safe defaults and can be adjusted without restarting the ser
 
 The following features are planned or under consideration for future releases:
 
+- Menus for Homes and Warps
 - Expanded menu customization (icons, text, colors)
 - Additional request context (server, world, distance)
 - Visual request timeout indicators
