@@ -373,7 +373,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
                         } catch (Throwable ignored) {}
 
                         if (value != null && !value.isBlank()) {
-                            if (config.debug()) plugin.getLogger().info("[HHM] extractTextures: PlayerProfile OK for " + p.getName() + " valueLen=" + value.length());
+                            if (config.debug()) plugin.getLogger().info("extractTextures: PlayerProfile OK for " + p.getName() + " valueLen=" + value.length());
                             return new PendingRequests.Skin(value, (sig == null || sig.isBlank()) ? null : sig);
                         }
                     }
@@ -382,7 +382,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
         } catch (NoSuchMethodException ignored) {
             // server doesn't have getPlayerProfile
         } catch (Throwable t) {
-            if (config.debug()) plugin.getLogger().info("[HHM] extractTextures: PlayerProfile failed for " + p.getName() + " err=" + t.getClass().getSimpleName());
+            if (config.debug()) plugin.getLogger().info("extractTextures: PlayerProfile failed for " + p.getName() + " err=" + t.getClass().getSimpleName());
         }
 
         // -------- Strategy B: Legacy CraftPlayer#getProfile() -> GameProfile --------
@@ -421,13 +421,13 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
 
             if (value == null || value.isBlank()) return null;
 
-            if (config.debug()) plugin.getLogger().info("[HHM] extractTextures: GameProfile OK for " + p.getName() + " valueLen=" + value.length());
+            if (config.debug()) plugin.getLogger().info("extractTextures: GameProfile OK for " + p.getName() + " valueLen=" + value.length());
             return new PendingRequests.Skin(value, (sig == null || sig.isBlank()) ? null : sig);
 
         } catch (NoSuchMethodException ignored) {
             // getProfile not present on this server build
         } catch (Throwable t) {
-            if (config.debug()) plugin.getLogger().info("[HHM] extractTextures: GameProfile failed for " + p.getName() + " err=" + t.getClass().getSimpleName());
+            if (config.debug()) plugin.getLogger().info("extractTextures: GameProfile failed for " + p.getName() + " err=" + t.getClass().getSimpleName());
         }
 
         return null;
@@ -511,14 +511,14 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
                         try { requestId = din.readLong(); } catch (EOFException ignored) {}
 
                         if (config.debug()) {
-                            plugin.getLogger().info("[HHM] SKIN_REQ received: subject=" + (player != null ? player.getName() : "null")
+                            plugin.getLogger().info("SKIN_REQ received: subject=" + (player != null ? player.getName() : "null")
                                     + " requester=" + requesterName + " target=" + targetUuidStr);
                         }
 
                         PendingRequests.Skin skin = extractTexturesFromPlayer(player);
                         if (skin == null || skin.value() == null || skin.value().isBlank()) {
                             if (config.debug()) {
-                                plugin.getLogger().info("[HHM] SKIN_REQ: no textures available for subject=" + (player != null ? player.getName() : "null"));
+                                plugin.getLogger().info("SKIN_REQ: no textures available for subject=" + (player != null ? player.getName() : "null"));
                             }
                             return;
                         }
@@ -537,7 +537,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
                         dout.writeLong(requestId);
 
                         if (config.debug()) {
-                            plugin.getLogger().info("[HHM] Sending SKIN_RESP -> requester=" + requesterName
+                            plugin.getLogger().info("Sending SKIN_RESP -> requester=" + requesterName
                                     + " subject=" + (player != null ? player.getName() : "null")
                                     + " valueLen=" + skin.value().length());
                         }
@@ -555,7 +555,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
 
                         // ✅ DEBUG LINE YOU REQUESTED
                         if (config.debug()) {
-                            plugin.getLogger().info("[HHM] SKIN_RESP for target=" + targetUuidStr + " subject=" + subjectName
+                            plugin.getLogger().info("SKIN_RESP for target=" + targetUuidStr + " subject=" + subjectName
                                     + " valueLen=" + (value == null ? 0 : value.length()));
                         }
 

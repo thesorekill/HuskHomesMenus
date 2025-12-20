@@ -31,7 +31,7 @@ public final class TeleportRequestToggleListener implements Listener {
     public void onReceive(ReceiveTeleportRequestEvent event) {
         final Player target = resolveTargetPlayer(event);
         if (target == null) {
-            if (debug) Bukkit.getLogger().info("[HHM] target == null; cannot enforce toggle");
+            if (debug) Bukkit.getLogger().info("target == null; cannot enforce toggle");
             return;
         }
 
@@ -68,8 +68,15 @@ public final class TeleportRequestToggleListener implements Listener {
                     long reqId = (System.nanoTime() ^ (System.currentTimeMillis() << 1)) & Long.MAX_VALUE;
                     boolean ok = messenger.requestSkinByName(requesterName, target.getName(), target.getUniqueId(), reqId);
 
-                    if (debug) Bukkit.getLogger().info("[HHM] requestSkinByName(" + requesterName + " -> " + target.getName() + ") ok=" + ok);
+                    if (debug) Bukkit.getLogger().info("requestSkinByName(" + requesterName + " -> " + target.getName() + ") ok=" + ok);
                 }
+            }
+
+            // ✅ TPMENU TOGGLE: if target disabled the GUI menu, let HuskHomes handle it normally (do NOT cancel)
+            // (No other logic removed; we simply early-return before any menu opening code elsewhere)
+            if (!toggles.isTpMenuOn(target)) {
+                if (debug) Bukkit.getLogger().info("tpmenu is OFF for " + target.getName() + "; skipping menu");
+                return;
             }
 
             return;
@@ -109,36 +116,36 @@ public final class TeleportRequestToggleListener implements Listener {
         final Player requester = resolveRequesterPlayer(event);
         if (requester != null) {
             if (!msg.isEmpty()) requester.sendMessage(msg);
-            if (debug) Bukkit.getLogger().info("[HHM] Sent local denial to " + requester.getName());
+            if (debug) Bukkit.getLogger().info("Sent local denial to " + requester.getName());
             return;
         }
 
         if (messenger == null || !messenger.isEnabled()) {
-            if (debug) Bukkit.getLogger().info("[HHM] messenger disabled; cannot send cross-server denial");
+            if (debug) Bukkit.getLogger().info("messenger disabled; cannot send cross-server denial");
             return;
         }
 
         Player carrier = anyOnlinePlayer();
         if (carrier == null) {
-            if (debug) Bukkit.getLogger().info("[HHM] No carrier player online; cannot send plugin message");
+            if (debug) Bukkit.getLogger().info("No carrier player online; cannot send plugin message");
             return;
         }
 
         final String requesterName = resolveRequesterName(event);
         if (requesterName != null && !requesterName.isBlank() && !msg.isEmpty()) {
             boolean ok = messenger.messagePlayer(requesterName, msg);
-            if (debug) Bukkit.getLogger().info("[HHM] messenger.messagePlayer -> " + ok);
+            if (debug) Bukkit.getLogger().info("messenger.messagePlayer -> " + ok);
             if (ok) return;
         } else {
-            if (debug) Bukkit.getLogger().info("[HHM] requesterName unresolved; cannot use messagePlayer");
+            if (debug) Bukkit.getLogger().info("requesterName unresolved; cannot use messagePlayer");
         }
 
         final UUID requesterUuid = resolveRequesterUuid(event);
         if (requesterUuid != null && !msg.isEmpty()) {
             boolean ok = tryForwardToIfPresent(messenger, requesterUuid, msg);
-            if (debug) Bukkit.getLogger().info("[HHM] messenger.forwardTo (reflective) -> " + ok);
+            if (debug) Bukkit.getLogger().info("messenger.forwardTo (reflective) -> " + ok);
         } else {
-            if (debug) Bukkit.getLogger().info("[HHM] requesterUuid unresolved; cannot forward denial");
+            if (debug) Bukkit.getLogger().info("requesterUuid unresolved; cannot forward denial");
         }
     }
 

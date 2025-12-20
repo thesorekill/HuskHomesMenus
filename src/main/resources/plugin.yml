@@ -34,6 +34,11 @@ commands:
     usage: /tpaheretoggle
     permission: huskhomesmenus.tpaheretoggle
 
+  tpmenu:
+    description: Toggle tp menu's
+    usage: /tpmenu
+    permission: huskhomesmenus.tpmenu
+
 permissions:
   huskhomesmenus.*:
     description: Grants all HuskHomesMenus permissions
@@ -45,14 +50,16 @@ permissions:
       huskhomesmenus.tpahere: true
       huskhomesmenus.tpaccept: true
       huskhomesmenus.tpdeny: true
-      huskhomesmenus.hhmaccept: true
-      huskhomesmenus.hhmdeny: true
+      huskhomesmenus.tpmenu: true
 
   huskhomesmenus.tpatoggle:
     description: Allows toggling /tpa request reception
     default: false
   huskhomesmenus.tpaheretoggle:
     description: Allows toggling /tpahere request reception
+    default: false
+  huskhomesmenus.tpmenu:
+    description: Allows toggling the teleport request GUI menu
     default: false
 
   huskhomesmenus.tpa:

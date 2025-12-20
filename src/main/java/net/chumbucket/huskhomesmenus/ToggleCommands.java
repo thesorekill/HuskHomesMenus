@@ -32,12 +32,18 @@ public final class ToggleCommands implements CommandExecutor {
                 sendToggleStatus(p, false, on);
                 return true;
             }
+            case "tpmenu" -> {
+                boolean on = toggles.toggleTpMenu(p);
+                sendTpMenuStatus(p, on);
+                return true;
+            }
             default -> {
-                return false;
+                return false; // (unchanged behavior)
             }
         }
     }
 
+    // Existing logic (unchanged)
     private void sendToggleStatus(Player p, boolean isTpa, boolean on) {
         if (!config.isEnabled("messages.toggles.show_status_lines.enabled", true)) return;
 
@@ -54,7 +60,25 @@ public final class ToggleCommands implements CommandExecutor {
         p.sendMessage(config.prefix() + config.color(template));
     }
 
+    // NEW: TPMenu status line
+    private void sendTpMenuStatus(Player p, boolean on) {
+        if (!config.isEnabled("messages.toggles.show_status_lines.enabled", true)) return;
+
+        final String basePath = "messages.toggles.tpmenu_status_line";
+        if (!config.isEnabled(basePath + ".enabled", true)) return;
+
+        String template = config.raw(basePath + ".text",
+                "%color%Teleport Menu: %state%");
+
+        template = template
+                .replace("%color%", on ? "&a" : "&c")
+                .replace("%state%", on ? "&lON" : "&lOFF");
+
+        p.sendMessage(config.prefix() + config.color(template));
+    }
+
     // kept for compatibility with existing patterns
+    @SuppressWarnings("unused")
     private String color(String s) {
         return ChatColor.translateAlternateColorCodes('&', s);
     }

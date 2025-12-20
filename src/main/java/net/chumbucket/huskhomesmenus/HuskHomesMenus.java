@@ -46,6 +46,7 @@ public final class HuskHomesMenus extends JavaPlugin {
         ToggleCommands toggleCommands = new ToggleCommands(toggleManager, config);
         safeSetExecutor("tpatoggle", toggleCommands);
         safeSetExecutor("tpaheretoggle", toggleCommands);
+        safeSetExecutor("tpmenu", toggleCommands);
 
         // Toggle enforcement (and cross-server denial messaging)
         Bukkit.getPluginManager().registerEvents(

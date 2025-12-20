@@ -274,7 +274,7 @@ public final class ConfirmRequestMenu implements Listener {
 
                         boolean ok = applyTexturesToSkull(meta, senderName, skin.value(), skin.signature());
                         if (config.debug()) {
-                            plugin.getLogger().info("[HHM] applyTexturesToSkull(slot=" + slot + ", owner=" + senderName + ") ok=" + ok
+                            plugin.getLogger().info("applyTexturesToSkull(slot=" + slot + ", owner=" + senderName + ") ok=" + ok
                                     + " valueLen=" + skin.value().length());
                         }
 
@@ -543,7 +543,7 @@ public final class ConfirmRequestMenu implements Listener {
                     if (skin != null && skin.value() != null && !skin.value().isBlank()) {
                         boolean ok = applyTexturesToSkull(meta, ownerName, skin.value(), skin.signature());
                         if (config.debug()) {
-                            plugin.getLogger().info("[HHM] buildPlayerHead applyTexturesToSkull(owner=" + ownerName + ") ok=" + ok
+                            plugin.getLogger().info("buildPlayerHead applyTexturesToSkull(owner=" + ownerName + ") ok=" + ok
                                     + " valueLen=" + skin.value().length());
                         }
                     }
@@ -736,7 +736,7 @@ public final class ConfirmRequestMenu implements Listener {
             // ---------------------------------------------------------
             Field profileField = findSkullProfileField(meta.getClass());
             if (profileField == null) {
-                if (dbg) plugin.getLogger().info("[HHM] applyTexturesToSkull: could not find skull profile field on " + meta.getClass().getName());
+                if (dbg) plugin.getLogger().info("applyTexturesToSkull: could not find skull profile field on " + meta.getClass().getName());
                 return false;
             }
 
@@ -747,7 +747,7 @@ public final class ConfirmRequestMenu implements Listener {
             // Case A: field is GameProfile
             if (fieldType.isAssignableFrom(gameProfileClz) || fieldTypeName.equals(gameProfileClz.getName())) {
                 profileField.set(meta, gameProfile);
-                if (dbg) plugin.getLogger().info("[HHM] applyTexturesToSkull: injected GameProfile into " + profileField.getName());
+                if (dbg) plugin.getLogger().info("applyTexturesToSkull: injected GameProfile into " + profileField.getName());
                 return true;
             }
 
@@ -773,17 +773,17 @@ public final class ConfirmRequestMenu implements Listener {
                 }
 
                 if (resolvable == null) {
-                    if (dbg) plugin.getLogger().info("[HHM] applyTexturesToSkull: couldn't build ResolvableProfile for type=" + fieldTypeName);
+                    if (dbg) plugin.getLogger().info("applyTexturesToSkull: couldn't build ResolvableProfile for type=" + fieldTypeName);
                     return false;
                 }
 
                 profileField.set(meta, resolvable);
-                if (dbg) plugin.getLogger().info("[HHM] applyTexturesToSkull: injected ResolvableProfile into " + profileField.getName());
+                if (dbg) plugin.getLogger().info("applyTexturesToSkull: injected ResolvableProfile into " + profileField.getName());
                 return true;
             }
 
             // If we got here, we found a field but it's not a supported profile type
-            if (dbg) plugin.getLogger().info("[HHM] applyTexturesToSkull: found field '" + profileField.getName()
+            if (dbg) plugin.getLogger().info("applyTexturesToSkull: found field '" + profileField.getName()
                     + "' but unsupported type: " + fieldTypeName);
             return false;
 
@@ -792,7 +792,7 @@ public final class ConfirmRequestMenu implements Listener {
                 Throwable cause = (t instanceof java.lang.reflect.InvocationTargetException ite && ite.getCause() != null)
                         ? ite.getCause()
                         : t;
-                plugin.getLogger().info("[HHM] applyTexturesToSkull: FAILED: "
+                plugin.getLogger().info("applyTexturesToSkull: FAILED: "
                         + cause.getClass().getSimpleName() + ": " + cause.getMessage());
             }
             return false;

@@ -94,7 +94,7 @@ messages:
     show_status_lines:
       enabled: true
 
-    # Format for the TPA status line (matches your screenshot style).
+    # Format for the TPA status line.
     # Placeholders:
     # - %state% -> ON / OFF
     # - %color% -> &a for ON, &c for OFF (chosen by the plugin)
@@ -102,11 +102,15 @@ messages:
       enabled: true
       text: "%color%TPA requests: %state%"
 
-    # Format for the TPAHERE status line (matches your screenshot style).
+    # Format for the TPAHERE status line.
     tpahere_status_line:
       enabled: true
       text: "%color%TPAHere requests: %state%"
 
+    # Format for the TPMenu status line.
+    tpmenu_status_line:
+      enabled: true
+      text: "%color%Teleport Menu: %state%"
 # ┌──────────────────────────────────────────────────────────────┐
 # │ Proxy / Cross-server messaging                               │
 # └──────────────────────────────────────────────────────────────┘
@@ -212,7 +216,7 @@ menus:
 
     # Extra static/info items in the menu
     items:
-      # LOCATION (dimension icon + dimension name) — matches screenshot:
+      # LOCATION (dimension icon + dimension name):
       # NAME: LOCATION
       # LORE: Overworld / Nether / The End
       # ICON: grass/netherrack/endstone
@@ -225,7 +229,7 @@ menus:
         nether_material: NETHERRACK
         end_material: END_STONE
 
-      # PLAYER (sender head) — matches screenshot:
+      # PLAYER (sender head):
       # NAME: PLAYER
       # LORE: TheBobLePonge
       - slot: 13
@@ -244,7 +248,7 @@ menus:
           - "&7%region%"
         requires_proxy: true
 
-    # CANCEL button — matches screenshot exactly
+    # CANCEL button
     deny:
       slot: 10
       item:
@@ -258,7 +262,7 @@ menus:
         sound: UI_BUTTON_CLICK
         close_menu: true
 
-    # CONFIRM button — matches screenshot exactly
+    # CONFIRM button
     accept:
       slot: 16
       item:
@@ -271,11 +275,3 @@ menus:
       click:
         sound: UI_BUTTON_CLICK
         close_menu: true
-
-# ┌──────────────────────────────────────────────────────────────┐
-# │ Commands                                                     │
-# └──────────────────────────────────────────────────────────────┘
-commands:
-  # Allow /tpa <player> even if they’re not on the same backend (proxy cache required)
-  # Turn this off if you don't want it to auto-complete the command line
-  allow_proxy_targeting: true
