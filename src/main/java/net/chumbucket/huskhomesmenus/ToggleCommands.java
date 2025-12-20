@@ -1,13 +1,3 @@
-/*
- * Copyright © 2025 Sorekill
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- */
-
 package net.chumbucket.huskhomesmenus;
 
 import org.bukkit.command.*;
@@ -55,13 +45,18 @@ public final class ToggleCommands implements CommandExecutor {
                 sendTpAutoStatus(p, on);
                 return true;
             }
+            case "homemenu" -> {
+                boolean on = toggles.toggleHomeMenu(p);
+                sendHomeMenuStatus(p, on);
+                return true;
+            }
+
             default -> {
-                return false; // unchanged behavior
+                return false;
             }
         }
     }
 
-    // Existing logic (fixed: send Adventure component, not legacy String)
     private void sendToggleStatus(Player p, boolean isTpa, boolean on) {
         if (!config.isEnabled("messages.toggles.show_status_lines.enabled", true)) return;
 
@@ -78,7 +73,6 @@ public final class ToggleCommands implements CommandExecutor {
         p.sendMessage(AMP.deserialize(config.prefix() + template));
     }
 
-    // Existing TPMenu status line (fixed)
     private void sendTpMenuStatus(Player p, boolean on) {
         if (!config.isEnabled("messages.toggles.show_status_lines.enabled", true)) return;
 
@@ -95,7 +89,6 @@ public final class ToggleCommands implements CommandExecutor {
         p.sendMessage(AMP.deserialize(config.prefix() + template));
     }
 
-    // ✅ NEW: TPAuto status line (fixed)
     private void sendTpAutoStatus(Player p, boolean on) {
         if (!config.isEnabled("messages.toggles.show_status_lines.enabled", true)) return;
 
@@ -112,7 +105,23 @@ public final class ToggleCommands implements CommandExecutor {
         p.sendMessage(AMP.deserialize(config.prefix() + template));
     }
 
-    // kept for compatibility with existing patterns
+    private void sendHomeMenuStatus(Player p, boolean on) {
+        // Note: uses your nested path under messages.toggles.homes
+        if (!config.isEnabled("messages.homes.show_status_lines.enabled", true)) return;
+
+        final String basePath = "messages.homes.homemenu_status_line";
+        if (!config.isEnabled(basePath + ".enabled", true)) return;
+
+        String template = config.raw(basePath + ".text",
+                "%color%Home Menu: %state%");
+
+        template = template
+                .replace("%color%", on ? "&a" : "&c")
+                .replace("%state%", on ? "&lON" : "&lOFF");
+
+        p.sendMessage(AMP.deserialize(config.prefix() + template));
+    }
+
     @SuppressWarnings("unused")
     private String color(String s) {
         return AMP.serialize(AMP.deserialize(s));
