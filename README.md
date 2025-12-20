@@ -79,22 +79,18 @@ Requires PlaceholderAPI **2.11.0+**.
 | Boolean | `%huskhomesmenus_tpahere%` | Returns whether `/tpahere` requests are enabled |
 | Boolean | `%huskhomesmenus_tpmenu%` | Returns whether the teleport menu is enabled |
 | Boolean | `%huskhomesmenus_tpauto%` | Returns whether auto-accept is enabled |
-
 | Text | `%huskhomesmenus_tpa_text%` | Returns `ON` or `OFF` for `/tpa` |
 | Text | `%huskhomesmenus_tpahere_text%` | Returns `ON` or `OFF` for `/tpahere` |
 | Text | `%huskhomesmenus_tpmenu_text%` | Returns `ON` or `OFF` for the teleport menu |
 | Text | `%huskhomesmenus_tpauto_text%` | Returns `ON` or `OFF` for auto-accept |
-
 | Icon | `%huskhomesmenus_tpa_icon%` | Returns ✔ or ✘ for `/tpa` |
 | Icon | `%huskhomesmenus_tpahere_icon%` | Returns ✔ or ✘ for `/tpahere` |
 | Icon | `%huskhomesmenus_tpmenu_icon%` | Returns ✔ or ✘ for the teleport menu |
 | Icon | `%huskhomesmenus_tpauto_icon%` | Returns ✔ or ✘ for auto-accept |
-
 | Pretty | `%huskhomesmenus_tpa_pretty%` | Colored status for `/tpa` |
 | Pretty | `%huskhomesmenus_tpahere_pretty%` | Colored status for `/tpahere` |
 | Pretty | `%huskhomesmenus_tpmenu_pretty%` | Colored status for the teleport menu |
 | Pretty | `%huskhomesmenus_tpauto_pretty%` | Colored status for auto-accept |
-
 | Combined | `%huskhomesmenus_requests_pretty%` | Combined `/tpa` and `/tpahere` status |
 | Combined | `%huskhomesmenus_all_pretty%` | Combined status of all teleport settings |
 
