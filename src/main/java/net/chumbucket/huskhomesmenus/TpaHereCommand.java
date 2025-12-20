@@ -63,7 +63,7 @@ public final class TpaHereCommand implements CommandExecutor {
                     player.sendMessage(
                         AMP.deserialize(
                             config.msgWithPrefix(
-                                "messages.sender.tpa_off.text",
+                                "messages.sender.tpahere_off.text",
                                 "&cThat player has &lTPAHere&r &crequests off."
                             )
                         )
