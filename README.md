@@ -130,6 +130,6 @@ Please keep contributions focused and aligned with the plugin’s lightweight de
 ## Credits
 
 - Built as an extension for **HuskHomes**
-- Developed for use on the **Chumbucket Network**
+- Developed for use on the **Chumbucket Network** chumbucket.net
 
-© 2025 Chumbucket Network. Licensed under the Apache-2.0 License.
+© 2025 Sorekill. Licensed under the Apache-2.0 License.
