@@ -20,6 +20,8 @@
 #   huskhomesmenus.tpaheretoggle -> /tpaheretoggle 
 #   huskhomesmenus.tpmenu        -> /tpmenu
 #   huskhomesmenus.tpauto        -> /tpauto
+#   huskhomesmenus.home          -> /home and /homes
+#   huskhomesmenus.homemenu        -> /homemenu
 
 # ┌──────────────────────────────────────────────────────────────┐
 # │  PLACEHOLDERS (If you have PlaceholderAPI Installed)         │
