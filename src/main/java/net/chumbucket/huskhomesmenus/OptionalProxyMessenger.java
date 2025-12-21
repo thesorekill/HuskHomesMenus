@@ -65,6 +65,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
 
         enabled = false;
     }
+
     // =========================================================
     // ✅ Dimension response sink
     // =========================================================
@@ -307,12 +308,38 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
     // Packet builders
     // =========================================================
 
+    // Bungee/Velocity expects legacy '§' color codes for "Message"
+    private static String ampersandToSection(String input) {
+        if (input == null || input.isEmpty()) return input == null ? "" : input;
+
+        char[] b = input.toCharArray();
+        for (int i = 0; i < b.length - 1; i++) {
+            if (b[i] != '&') continue;
+
+            char c = b[i + 1];
+            // 0-9 a-f k-o r (case-insensitive)
+            boolean ok =
+                    (c >= '0' && c <= '9') ||
+                    (c >= 'a' && c <= 'f') ||
+                    (c >= 'A' && c <= 'F') ||
+                    (c >= 'k' && c <= 'o') ||
+                    (c >= 'K' && c <= 'O') ||
+                    (c == 'r' || c == 'R');
+
+            if (ok) b[i] = '\u00A7'; // §
+        }
+        return new String(b);
+    }
+
     private byte[] buildMessagePacket(String playerName, String message) throws IOException {
         ByteArrayOutputStream bytes = new ByteArrayOutputStream();
         DataOutputStream out = new DataOutputStream(bytes);
         out.writeUTF("Message");
         out.writeUTF(playerName);
-        out.writeUTF(message == null ? "" : message);
+
+        // ✅ Convert &-codes to §-codes for proxy delivery
+        out.writeUTF(ampersandToSection(message == null ? "" : message));
+
         return bytes.toByteArray();
     }
 
@@ -363,18 +390,15 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
 
     // =========================================================
     // ✅ Extract textures from a local Player (remote backend side)
-    //    FIXED: supports modern PlayerProfile AND legacy GameProfile
     // =========================================================
     private PendingRequests.Skin extractTexturesFromPlayer(Player p) {
         if (p == null) return null;
 
         // -------- Strategy A: Modern Bukkit/Paper PlayerProfile API --------
-        // Player#getPlayerProfile() -> org.bukkit.profile.PlayerProfile
         try {
             Method getPlayerProfile = p.getClass().getMethod("getPlayerProfile");
             Object profile = getPlayerProfile.invoke(p);
             if (profile != null) {
-                // profile.getProperties() -> Collection<ProfileProperty>
                 Method getProps = profile.getClass().getMethod("getProperties");
                 Object propsObj = getProps.invoke(profile);
 
@@ -412,7 +436,6 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
                 }
             }
         } catch (NoSuchMethodException ignored) {
-            // server doesn't have getPlayerProfile
         } catch (Throwable t) {
             if (config.debug()) plugin.getLogger().info("extractTextures: PlayerProfile failed for " + p.getName() + " err=" + t.getClass().getSimpleName());
         }
@@ -457,7 +480,6 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
             return new PendingRequests.Skin(value, (sig == null || sig.isBlank()) ? null : sig);
 
         } catch (NoSuchMethodException ignored) {
-            // getProfile not present on this server build
         } catch (Throwable t) {
             if (config.debug()) plugin.getLogger().info("extractTextures: GameProfile failed for " + p.getName() + " err=" + t.getClass().getSimpleName());
         }
@@ -478,6 +500,8 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
             String sub = in.readUTF();
             if (sub == null || sub.isBlank()) return;
 
+            // NOTE: "Message" is handled by the proxy and will not arrive here.
+
             if (SUBCHANNEL.equalsIgnoreCase(sub)) {
                 short len = in.readShort();
                 if (len <= 0) return;
@@ -488,6 +512,8 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
                     String cmd = din.readUTF();
                     if (cmd == null || cmd.isBlank()) return;
 
+                    // --- your DIM/SKIN logic stays exactly as-is below ---
+                    // (keep the rest of your existing SUBCHANNEL handler unchanged)
                     // =================================================
                     // DIM
                     // =================================================
@@ -525,9 +551,6 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
                         return;
                     }
 
-                    // =================================================
-                    // ✅ SKIN
-                    // =================================================
                     if ("SKIN_REQ".equalsIgnoreCase(cmd)) {
                         String requesterName = din.readUTF();
                         if (requesterName == null || requesterName.isBlank()) return;
@@ -585,7 +608,6 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
                         String value = din.readUTF();
                         String sig = din.readUTF();
 
-                        // ✅ DEBUG LINE YOU REQUESTED
                         if (config.debug()) {
                             plugin.getLogger().info("SKIN_RESP for target=" + targetUuidStr + " subject=" + subjectName
                                     + " valueLen=" + (value == null ? 0 : value.length()));

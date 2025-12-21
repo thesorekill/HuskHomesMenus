@@ -59,7 +59,7 @@ public final class TpaHereCommand implements CommandExecutor {
                 }
                 return true;
             } else if (!toggles.isTpahereOn(target)) {
-                if (config.isEnabled("messages.sender.tpa_off.enabled", true)) {
+                if (config.isEnabled("messages.sender.tpahere_off.enabled", true)) {
                     player.sendMessage(
                         AMP.deserialize(
                             config.msgWithPrefix(
