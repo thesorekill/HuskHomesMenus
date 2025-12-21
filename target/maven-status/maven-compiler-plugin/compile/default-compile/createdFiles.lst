@@ -1,5 +1,6 @@
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu.class
 net\chumbucket\huskhomesmenus\HHMCommand.class
+net\chumbucket\huskhomesmenus\HomesMenu.class
 net\chumbucket\huskhomesmenus\TpaHereCommand.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$1.class
 net\chumbucket\huskhomesmenus\TeleportCommandInterceptListener.class
@@ -11,6 +12,8 @@ net\chumbucket\huskhomesmenus\ConfirmRequestMenu$3.class
 net\chumbucket\huskhomesmenus\OptionalProxyMessenger$SkinResponse.class
 net\chumbucket\huskhomesmenus\OptionalProxyMessenger.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$Session.class
+net\chumbucket\huskhomesmenus\HomesCommand.class
+net\chumbucket\huskhomesmenus\HomesMenu$HomesHolder.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$RequestType.class
 net\chumbucket\huskhomesmenus\TpDenyCommand.class
 net\chumbucket\huskhomesmenus\TpAcceptCommand.class
@@ -28,3 +31,4 @@ net\chumbucket\huskhomesmenus\TeleportRequestToggleListener.class
 net\chumbucket\huskhomesmenus\ToggleManager.class
 net\chumbucket\huskhomesmenus\HHMConfig.class
 net\chumbucket\huskhomesmenus\ToggleCommands.class
+net\chumbucket\huskhomesmenus\HomesCommandInterceptListener.class

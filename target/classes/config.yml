@@ -3,7 +3,7 @@
 # ┃               Copyright © 2025 Sorekill               ┃
 # ┃    Licensed under the Apache License, Version 2.0.    ┃
 # ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-# ┣╸ Version: 1.1.0
+# ┣╸ Version: 1.1.1
 # ┣╸ Purpose: GUI + toggles + proxy-safe messaging for HuskHomes TPA/TPAHERE
 # ┗╸ Notes: Designed for proxy networks (Velocity/Bungee/Waterfall)
 
@@ -72,7 +72,6 @@ messages:
   # Prefix added before most chat messages from this plugin.
   # Leave blank ("") if you don't want a prefix.
   prefix: "&8[&bHuskHomesMenus&8]&r "
-
   # Messages sent to the sender of a teleport request (the person typing /tpa or /tpahere)
   sender:
     # Sent to the sender when the target has TPA requests disabled.
@@ -129,6 +128,17 @@ messages:
     tpmenu_status_line:
       enabled: true
       text: "%color%Teleport Menu: %state%"
+    
+  # Messages shown to players throughout the homes menu
+  homes:
+    # If enabled, after toggling we will show the status lines below.
+    show_status_lines:
+      enabled: true
+      
+    # Format for the HomeMenu status line.
+    homemenu_status_line:
+      enabled: true
+      text: "%color%Home Menu: %state%"
 # ┌──────────────────────────────────────────────────────────────┐
 # │ Proxy / Cross-server messaging                               │
 # └──────────────────────────────────────────────────────────────┘

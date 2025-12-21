@@ -21,17 +21,18 @@ public final class ToggleManager {
     private final NamespacedKey keyTpa;
     private final NamespacedKey keyTpahere;
 
-    // toggle for whether to use the GUI menu for TP requests (default ON)
     private final NamespacedKey keyTpMenu;
-
-    // ✅ auto-accept incoming /tpa requests (default OFF)
     private final NamespacedKey keyTpAuto;
+
+    // ✅ NEW: toggle for whether to use the Homes GUI intercept (default ON)
+    private final NamespacedKey keyHomeMenu;
 
     public ToggleManager(JavaPlugin plugin) {
         this.keyTpa = new NamespacedKey(plugin, "tpa_on");
         this.keyTpahere = new NamespacedKey(plugin, "tpahere_on");
         this.keyTpMenu = new NamespacedKey(plugin, "tpmenu_on");
         this.keyTpAuto = new NamespacedKey(plugin, "tpauto_on");
+        this.keyHomeMenu = new NamespacedKey(plugin, "homemenu_on");
     }
 
     public boolean isTpaOn(Player p) {
@@ -42,14 +43,16 @@ public final class ToggleManager {
         return getFlagDefaultTrue(p, keyTpahere);
     }
 
-    // default ON (your current behavior)
     public boolean isTpMenuOn(Player p) {
         return getFlagDefaultTrue(p, keyTpMenu);
     }
 
-    // ✅ default OFF
     public boolean isTpAutoOn(Player p) {
         return getFlagDefaultFalse(p, keyTpAuto);
+    }
+
+    public boolean isHomeMenuOn(Player p) {
+        return getFlagDefaultTrue(p, keyHomeMenu);
     }
 
     public boolean toggleTpa(Player p) {
@@ -76,6 +79,12 @@ public final class ToggleManager {
         return now;
     }
 
+    public boolean toggleHomeMenu(Player p) {
+        boolean now = !isHomeMenuOn(p);
+        setFlag(p, keyHomeMenu, now);
+        return now;
+    }
+
     public void setTpMenuOn(Player p, boolean on) {
         setFlag(p, keyTpMenu, on);
     }
@@ -84,17 +93,21 @@ public final class ToggleManager {
         setFlag(p, keyTpAuto, on);
     }
 
+    public void setHomeMenuOn(Player p, boolean on) {
+        setFlag(p, keyHomeMenu, on);
+    }
+
     private boolean getFlagDefaultTrue(Player p, NamespacedKey key) {
         PersistentDataContainer pdc = p.getPersistentDataContainer();
         Byte stored = pdc.get(key, PersistentDataType.BYTE);
-        if (stored == null) return true; // default ON
+        if (stored == null) return true;
         return stored == (byte) 1;
     }
 
     private boolean getFlagDefaultFalse(Player p, NamespacedKey key) {
         PersistentDataContainer pdc = p.getPersistentDataContainer();
         Byte stored = pdc.get(key, PersistentDataType.BYTE);
-        if (stored == null) return false; // ✅ default OFF
+        if (stored == null) return false;
         return stored == (byte) 1;
     }
 

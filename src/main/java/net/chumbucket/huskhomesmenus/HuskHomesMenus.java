@@ -26,10 +26,12 @@ public final class HuskHomesMenus extends JavaPlugin {
 
     private ProxyPlayerCache playerCache;
     private ConfirmRequestMenu confirmMenu;
+    private HomesMenu homesMenu;
 
     // Keep references so we can unregister cleanly on reload
     private TeleportCommandInterceptListener interceptListener;
     private TeleportRequestToggleListener toggleListener;
+    private HomesCommandInterceptListener homesInterceptListener;
 
     @Override
     public void onEnable() {
@@ -96,6 +98,25 @@ public final class HuskHomesMenus extends JavaPlugin {
         } catch (Throwable ignored) { }
     }
 
+    private void closeOpenHomesMenus() {
+        try {
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                if (p == null) continue;
+
+                Inventory top = null;
+                try { top = p.getOpenInventory().getTopInventory(); }
+                catch (Throwable ignored) {}
+
+                if (top == null) continue;
+
+                InventoryHolder holder = top.getHolder();
+                if (holder instanceof HomesMenu.HomesHolder) {
+                    try { p.closeInventory(); } catch (Throwable ignored) {}
+                }
+            }
+        } catch (Throwable ignored) { }
+    }
+
     private void initRuntime() {
         // Fresh wrappers/managers
         this.config = new HHMConfig(this);
@@ -109,14 +130,21 @@ public final class HuskHomesMenus extends JavaPlugin {
         this.playerCache = new ProxyPlayerCache(this, config, messenger);
         this.playerCache.start();
 
-        // Menu
+        // TP Menu
         this.confirmMenu = new ConfirmRequestMenu(this, config, playerCache);
+
+        // Homes Menu
+        this.homesMenu = new HomesMenu(this, config);
 
         // Listeners
         Bukkit.getPluginManager().registerEvents(confirmMenu, this);
+        Bukkit.getPluginManager().registerEvents(homesMenu, this);
 
         this.interceptListener = new TeleportCommandInterceptListener(confirmMenu, config, toggleManager);
         Bukkit.getPluginManager().registerEvents(interceptListener, this);
+        this.homesInterceptListener = new HomesCommandInterceptListener(homesMenu, toggleManager);
+        Bukkit.getPluginManager().registerEvents(homesInterceptListener, this);
+
 
         this.toggleListener = new TeleportRequestToggleListener(this, toggleManager, messenger, config);
         Bukkit.getPluginManager().registerEvents(toggleListener, this);
@@ -126,12 +154,15 @@ public final class HuskHomesMenus extends JavaPlugin {
         safeSetExecutor("tpahere", new TpaHereCommand(toggleManager, config));
         safeSetExecutor("tpaccept", new TpAcceptCommand(confirmMenu, toggleManager));
         safeSetExecutor("tpdeny", new TpDenyCommand(confirmMenu, toggleManager));
+        safeSetExecutor("home", new HomesCommand(homesMenu, config));
+        safeSetExecutor("homes", new HomesCommand(homesMenu, config));
 
         ToggleCommands toggleCommands = new ToggleCommands(toggleManager, config);
         safeSetExecutor("tpatoggle", toggleCommands);
         safeSetExecutor("tpaheretoggle", toggleCommands);
         safeSetExecutor("tpmenu", toggleCommands);
         safeSetExecutor("tpauto", toggleCommands);
+        safeSetExecutor("homemenu", toggleCommands);
 
         // Admin command
         safeSetExecutor("hhm", new HHMCommand(this, config));
@@ -175,8 +206,16 @@ public final class HuskHomesMenus extends JavaPlugin {
             if (toggleListener != null) HandlerList.unregisterAll(toggleListener);
         } catch (Throwable ignored) { }
 
-        // ✅ Close any open ConfirmRequestMenu inventories (now safe: no auto-deny will run)
+        try {
+            if (homesMenu != null) HandlerList.unregisterAll(homesMenu);
+        } catch (Throwable ignored) { }
+
+        try {
+            if (homesInterceptListener != null) HandlerList.unregisterAll(homesInterceptListener);
+        } catch (Throwable ignored) { }
+
         closeOpenConfirmMenus();
+        closeOpenHomesMenus();
 
         // Disable proxy messaging (unregister channels)
         try {
@@ -196,6 +235,8 @@ public final class HuskHomesMenus extends JavaPlugin {
         this.messenger = null;
         this.toggleManager = null;
         this.config = null;
+        this.homesMenu = null;
+        this.homesInterceptListener = null;
     }
 
     // ------------------------------------------------------------
