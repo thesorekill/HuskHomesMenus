@@ -154,8 +154,8 @@ public final class HuskHomesMenus extends JavaPlugin {
         safeSetExecutor("tpahere", new TpaHereCommand(toggleManager, config));
         safeSetExecutor("tpaccept", new TpAcceptCommand(confirmMenu, toggleManager));
         safeSetExecutor("tpdeny", new TpDenyCommand(confirmMenu, toggleManager));
-        safeSetExecutor("home", new HomesCommand(homesMenu, config));
-        safeSetExecutor("homes", new HomesCommand(homesMenu, config));
+        safeSetExecutor("home", new HomesCommand(homesMenu, config, toggleManager));
+        safeSetExecutor("homes", new HomesCommand(homesMenu, config, toggleManager));
 
         ToggleCommands toggleCommands = new ToggleCommands(toggleManager, config);
         safeSetExecutor("tpatoggle", toggleCommands);
