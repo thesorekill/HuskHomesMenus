@@ -10,6 +10,8 @@
 
 package net.chumbucket.huskhomesmenus;
 
+import net.kyori.adventure.text.Component; // ✅ NEW
+import net.kyori.adventure.text.format.TextDecoration; // ✅ NEW (real no-italics fix)
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.william278.huskhomes.api.HuskHomesAPI;
 import net.william278.huskhomes.position.Home;
@@ -50,16 +52,80 @@ public final class HomesMenu implements Listener {
 
     private final Set<UUID> openMenus = ConcurrentHashMap.newKeySet();
 
-    // --- Anti-spam / in-flight guard (fixes "delete clicked too quickly") ---
+    // --- Anti-spam / in-flight guard (fixes "clicked too quickly") ---
     private final Set<UUID> inFlightActions = ConcurrentHashMap.newKeySet();
     private final Map<UUID, Long> lastActionMs = new ConcurrentHashMap<>();
-    private final long clickCooldownMs = 250L; // small debounce; adjust if you want
+    private final long clickCooldownMs = 250L; // small debounce
+
+    public HomesMenu(JavaPlugin plugin, HHMConfig config) {
+        this.plugin = plugin;
+        this.config = config;
+    }
+
+    public boolean isHomesMenuOpen(Player p) {
+        return p != null && openMenus.contains(p.getUniqueId());
+    }
+
+    // ---------------------------------------------------------------------
+    // ✅ NO-ITALICS FIX (real fix): force ITALIC=false on name + lore components
+    // ---------------------------------------------------------------------
+    private Component deitalicize(Component c) {
+        if (c == null) return Component.empty();
+
+        Component out = c.decoration(TextDecoration.ITALIC, false);
+
+        if (!out.children().isEmpty()) {
+            List<Component> kids = new ArrayList<>(out.children().size());
+            for (Component child : out.children()) {
+                kids.add(deitalicize(child));
+            }
+            out = out.children(kids);
+        }
+
+        return out;
+    }
+
+    private ItemStack buildNoItalics(HHMConfig.MenuItemTemplate tpl, Map<String, String> placeholders) {
+        if (tpl == null) return new ItemStack(Material.AIR);
+
+        ItemStack item = config.buildItem(tpl, placeholders == null ? Map.of() : placeholders);
+        if (item == null || item.getType() == Material.AIR) return item;
+
+        try {
+            var meta = item.getItemMeta();
+            if (meta == null) return item;
+
+            // Always ensure a non-empty display name so it doesn't default-style weirdly
+            Component name = meta.displayName();
+            if (name == null) {
+                name = AMP.deserialize(" ");
+            }
+
+            meta.displayName(deitalicize(name));
+
+            // Lore: force non-italic on every line if present
+            List<Component> lore = meta.lore();
+            if (lore != null && !lore.isEmpty()) {
+                List<Component> fixed = new ArrayList<>(lore.size());
+                for (Component line : lore) fixed.add(deitalicize(line));
+                meta.lore(fixed);
+            }
+
+            item.setItemMeta(meta);
+        } catch (Throwable ignored) { }
+
+        return item;
+    }
+
+    // ---------------------------------------------------------------------
+    // Holders
+    // ---------------------------------------------------------------------
 
     public static final class HomesHolder implements InventoryHolder {
         private final UUID owner;
         private final int page;       // 0-based
         private final int maxHomes;   // HuskHomes max
-        private final int perPage;    // homes per page (computed from layout + rows)
+        private final int perPage;    // homes per page
         private final Layout layout;  // frozen layout used to render (for click math)
         private final boolean navEnabled;
         private final int navPrevSlot, navPageSlot, navNextSlot, navCloseSlot;
@@ -101,6 +167,50 @@ public final class HomesMenu implements Listener {
         public Inventory getInventory() { return null; } // not used
     }
 
+    public static final class DeleteConfirmHolder implements InventoryHolder {
+        private final UUID owner;
+        private final int returnPage;        // the page to return to in homes menu
+        private final int homeNumber;        // slot number (1..maxHomes)
+        private final String actualHomeName; // actual HuskHomes name to delete
+
+        private final int rows;
+        private final boolean useFiller;
+
+        private final int cancelSlot;
+        private final int homeSlot;
+        private final int confirmSlot;
+
+        private DeleteConfirmHolder(UUID owner, int returnPage, int homeNumber, String actualHomeName,
+                                    int rows, boolean useFiller,
+                                    int cancelSlot, int homeSlot, int confirmSlot) {
+            this.owner = owner;
+            this.returnPage = returnPage;
+            this.homeNumber = homeNumber;
+            this.actualHomeName = actualHomeName;
+            this.rows = rows;
+            this.useFiller = useFiller;
+            this.cancelSlot = cancelSlot;
+            this.homeSlot = homeSlot;
+            this.confirmSlot = confirmSlot;
+        }
+
+        public UUID owner() { return owner; }
+        public int returnPage() { return returnPage; }
+        public int homeNumber() { return homeNumber; }
+        public String actualHomeName() { return actualHomeName; }
+
+        public int rows() { return rows; }
+        public boolean useFiller() { return useFiller; }
+
+        public int cancelSlot() { return cancelSlot; }
+        public int homeSlot() { return homeSlot; }
+        public int confirmSlot() { return confirmSlot; }
+
+        @Override
+        public Inventory getInventory() { return null; } // not used
+    }
+
+    // Frozen layout snapshot used for build + click calculations
     public static final class Layout {
         final int rows;
         final int columns;
@@ -113,7 +223,8 @@ public final class HomesMenu implements Listener {
 
         final boolean useFiller;
 
-        Layout(int rows, int columns, int teleportStartSlot, int actionStartSlot, int actionOffsetRows, int lineStrideRows, boolean useFiller) {
+        Layout(int rows, int columns, int teleportStartSlot, int actionStartSlot,
+               int actionOffsetRows, int lineStrideRows, boolean useFiller) {
             this.rows = rows;
             this.columns = columns;
             this.teleportStartSlot = teleportStartSlot;
@@ -124,14 +235,9 @@ public final class HomesMenu implements Listener {
         }
     }
 
-    public HomesMenu(JavaPlugin plugin, HHMConfig config) {
-        this.plugin = plugin;
-        this.config = config;
-    }
-
-    public boolean isHomesMenuOpen(Player p) {
-        return p != null && openMenus.contains(p.getUniqueId());
-    }
+    // ---------------------------------------------------------------------
+    // Open homes menu (fetch homes async)
+    // ---------------------------------------------------------------------
 
     public void open(Player player) {
         open(player, 0);
@@ -167,9 +273,9 @@ public final class HomesMenu implements Listener {
         });
     }
 
-    // ------------------------------------------------------------
-    // Build / Render
-    // ------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // Build / Render homes menu
+    // ---------------------------------------------------------------------
 
     private void buildAndOpen(Player player, int requestedPage, int maxHomes, List<Home> homes) {
         final int rows = clamp(config.homesRows(), 1, 6);
@@ -214,7 +320,7 @@ public final class HomesMenu implements Listener {
     }
 
     /**
-     * Re-renders the menu into an existing inventory (no flicker).
+     * Re-renders the homes menu into an existing inventory (no flicker).
      */
     private void renderIntoInventory(Inventory inv, HomesHolder holder, int page, int pages, int maxHomes, List<Home> homes) {
         Layout layout = holder.layout();
@@ -223,7 +329,7 @@ public final class HomesMenu implements Listener {
         inv.clear();
 
         if (useFiller) {
-            ItemStack filler = config.buildItem(config.homesFillerItem(), Map.of());
+            ItemStack filler = buildNoItalics(config.homesFillerItem(), Map.of());
             for (int i = 0; i < inv.getSize(); i++) inv.setItem(i, filler);
         }
 
@@ -255,11 +361,11 @@ public final class HomesMenu implements Listener {
             ph.put("%home_name%", exists ? actualName : "");
 
             if (exists) {
-                inv.setItem(bedSlot, config.buildItem(savedBedTpl, ph));
-                inv.setItem(actionSlot, config.buildItem(deleteActionTpl, ph));
+                inv.setItem(bedSlot, buildNoItalics(savedBedTpl, ph));
+                inv.setItem(actionSlot, buildNoItalics(deleteActionTpl, ph));
             } else {
-                inv.setItem(bedSlot, config.buildItem(emptyBedTpl, ph));
-                inv.setItem(actionSlot, config.buildItem(emptyActionTpl, ph));
+                inv.setItem(bedSlot, buildNoItalics(emptyBedTpl, ph));
+                inv.setItem(actionSlot, buildNoItalics(emptyActionTpl, ph));
             }
         }
 
@@ -279,23 +385,137 @@ public final class HomesMenu implements Listener {
             int nextSlot = clamp(holder.navNextSlot(), 0, inv.getSize() - 1);
             int closeSlot = clamp(holder.navCloseSlot(), 0, inv.getSize() - 1);
 
-            if (page > 0) inv.setItem(prevSlot, config.buildItem(config.homesNavPrevItem(), navPh));
-            inv.setItem(pageSlot, config.buildItem(config.homesNavPageItem(), navPh));
-            if (page < pages - 1) inv.setItem(nextSlot, config.buildItem(config.homesNavNextItem(), navPh));
-            inv.setItem(closeSlot, config.buildItem(config.homesNavCloseItem(), navPh));
+            if (page > 0) inv.setItem(prevSlot, buildNoItalics(config.homesNavPrevItem(), navPh));
+            inv.setItem(pageSlot, buildNoItalics(config.homesNavPageItem(), navPh));
+            if (page < pages - 1) inv.setItem(nextSlot, buildNoItalics(config.homesNavNextItem(), navPh));
+            inv.setItem(closeSlot, buildNoItalics(config.homesNavCloseItem(), navPh));
         }
     }
 
-    // ------------------------------------------------------------
-    // Click handling (ANTI SPAM + API-first refresh)
-    // ------------------------------------------------------------
+    // ---------------------------------------------------------------------
+    // Delete confirmation menu (configurable under menus.homes.delete_confirm)
+    // ---------------------------------------------------------------------
+
+    private boolean deleteConfirmEnabled() {
+        return plugin.getConfig().getBoolean("menus.homes.delete_confirm.enabled", true);
+    }
+
+    private void openDeleteConfirm(Player p, int returnPage, int homeNumber, String actualHomeName) {
+        if (p == null || !p.isOnline()) return;
+
+        final String basePath = "menus.homes.delete_confirm";
+        final String title = plugin.getConfig().getString(basePath + ".title", "&7Confirm Delete");
+        final int rows = clamp(plugin.getConfig().getInt(basePath + ".rows", 3), 1, 6);
+        final boolean useFiller = plugin.getConfig().getBoolean(basePath + ".use_filler", true);
+
+        HHMConfig.MenuItemTemplate fillerTpl = HHMConfig.MenuItemTemplate.fromSection(
+                plugin.getConfig().getConfigurationSection(basePath + ".filler"),
+                new HHMConfig.MenuItemTemplate(Material.GRAY_STAINED_GLASS_PANE, " ", List.of(), false, 0)
+        );
+
+        HHMConfig.MenuItemTemplate cancelTpl = HHMConfig.MenuItemTemplate.fromSection(
+                plugin.getConfig().getConfigurationSection(basePath + ".items.cancel"),
+                new HHMConfig.MenuItemTemplate(Material.RED_STAINED_GLASS_PANE, "&cCANCEL",
+                        List.of("&7Click to cancel!"), false, 0)
+        );
+
+        HHMConfig.MenuItemTemplate homeTpl = HHMConfig.MenuItemTemplate.fromSection(
+                plugin.getConfig().getConfigurationSection(basePath + ".items.home"),
+                new HHMConfig.MenuItemTemplate(Material.LIGHT_BLUE_DYE, "&bHOME %home_name%",
+                        List.of(), false, 0)
+        );
+
+        HHMConfig.MenuItemTemplate confirmTpl = HHMConfig.MenuItemTemplate.fromSection(
+                plugin.getConfig().getConfigurationSection(basePath + ".items.confirm"),
+                new HHMConfig.MenuItemTemplate(Material.LIME_STAINED_GLASS_PANE, "&aCONFIRM",
+                        List.of("&7Click to delete"), false, 0)
+        );
+
+        int invSize = rows * 9;
+
+        int cancelSlot = clamp(plugin.getConfig().getInt(basePath + ".items.cancel.slot", 11), 0, invSize - 1);
+        int homeSlot = clamp(plugin.getConfig().getInt(basePath + ".items.home.slot", 13), 0, invSize - 1);
+        int confirmSlot = clamp(plugin.getConfig().getInt(basePath + ".items.confirm.slot", 15), 0, invSize - 1);
+
+        DeleteConfirmHolder holder = new DeleteConfirmHolder(
+                p.getUniqueId(),
+                Math.max(0, returnPage),
+                homeNumber,
+                actualHomeName,
+                rows,
+                useFiller,
+                cancelSlot,
+                homeSlot,
+                confirmSlot
+        );
+
+        Inventory inv = Bukkit.createInventory(holder, invSize, AMP.deserialize(title));
+
+        if (useFiller) {
+            ItemStack filler = buildNoItalics(fillerTpl, Map.of());
+            for (int i = 0; i < inv.getSize(); i++) inv.setItem(i, filler);
+        }
+
+        Map<String, String> ph = new HashMap<>();
+        ph.put("%home%", String.valueOf(homeNumber));
+        ph.put("%home_name%", actualHomeName == null ? "" : actualHomeName);
+
+        inv.setItem(cancelSlot, buildNoItalics(cancelTpl, ph));
+        inv.setItem(homeSlot, buildNoItalics(homeTpl, ph));
+        inv.setItem(confirmSlot, buildNoItalics(confirmTpl, ph));
+
+        p.openInventory(inv);
+        openMenus.add(p.getUniqueId());
+    }
+
+    // ---------------------------------------------------------------------
+    // Click handling (Homes + DeleteConfirm)
+    // ---------------------------------------------------------------------
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onClick(InventoryClickEvent e) {
         if (!(e.getWhoClicked() instanceof Player p)) return;
 
         Inventory top = e.getView().getTopInventory();
-        if (!(top.getHolder() instanceof HomesHolder holder)) return;
+        InventoryHolder rawHolder = top.getHolder();
+
+        // Delete confirm clicks
+        if (rawHolder instanceof DeleteConfirmHolder dch) {
+            e.setCancelled(true);
+
+            int slot = e.getRawSlot();
+            if (slot < 0 || slot >= top.getSize()) return;
+
+            if (!beginAction(p.getUniqueId())) return;
+
+            if (slot == dch.cancelSlot()) {
+                try { open(p, dch.returnPage()); }
+                finally { endAction(p.getUniqueId()); }
+                return;
+            }
+
+            if (slot == dch.confirmSlot()) {
+                try {
+                    top.setItem(slot, new ItemStack(Material.GRAY_STAINED_GLASS_PANE));
+                    p.updateInventory();
+                } catch (Throwable ignored) {}
+
+                final String deleteName = dch.actualHomeName();
+                doDeleteHomeApiFirst(p, deleteName).whenComplete((ok, err) ->
+                        Bukkit.getScheduler().runTask(plugin, () -> {
+                            try { open(p, dch.returnPage()); }
+                            finally { endAction(p.getUniqueId()); }
+                        })
+                );
+                return;
+            }
+
+            endAction(p.getUniqueId());
+            return;
+        }
+
+        // Homes menu clicks
+        if (!(rawHolder instanceof HomesHolder holder)) return;
 
         e.setCancelled(true);
 
@@ -331,7 +551,6 @@ public final class HomesMenu implements Listener {
         ItemStack clicked = top.getItem(slot);
         if (clicked == null || clicked.getType() == Material.AIR) return;
 
-        // Teleport click
         if (ref.kind == HomeSlotKind.TELEPORT) {
             Material expectedSavedBed = safeMaterial(config.homesTeleportItem().material(), Material.BLUE_BED);
             if (!exists) return;
@@ -342,24 +561,17 @@ public final class HomesMenu implements Listener {
             return;
         }
 
-        // Action click
         if (ref.kind == HomeSlotKind.ACTION) {
-
-            // --- debounce / in-flight guard ---
-            if (!beginAction(p.getUniqueId())) {
-                return; // ignore spam clicks
-            }
+            if (!beginAction(p.getUniqueId())) return;
 
             Material createMat = safeMaterial(config.homesEmptyActionItem().material(), Material.GRAY_DYE);
             Material deleteMat = safeMaterial(config.homesDeleteActionItem().material(), Material.LIGHT_BLUE_DYE);
 
-            // If the click isn't actually one of our action buttons, release lock immediately
             if (clicked.getType() != createMat && clicked.getType() != deleteMat) {
                 endAction(p.getUniqueId());
                 return;
             }
 
-            // Visually disable the clicked action slot immediately (prevents double click)
             try {
                 top.setItem(slot, new ItemStack(Material.GRAY_STAINED_GLASS_PANE));
                 p.updateInventory();
@@ -370,7 +582,8 @@ public final class HomesMenu implements Listener {
 
                 doSetHomeApiFirst(p, newHomeName).whenComplete((ok, err) ->
                         Bukkit.getScheduler().runTask(plugin, () -> {
-                            try { refreshIfStillOpen(p); } finally { endAction(p.getUniqueId()); }
+                            try { refreshIfStillOpen(p); }
+                            finally { endAction(p.getUniqueId()); }
                         })
                 );
                 return;
@@ -382,15 +595,47 @@ public final class HomesMenu implements Listener {
                     return;
                 }
 
-                final String deleteName = actualName; // snapshot
+                if (deleteConfirmEnabled()) {
+                    try { openDeleteConfirm(p, holder.page(), homeNumber, actualName); }
+                    finally { endAction(p.getUniqueId()); }
+                    return;
+                }
+
+                final String deleteName = actualName;
                 doDeleteHomeApiFirst(p, deleteName).whenComplete((ok, err) ->
                         Bukkit.getScheduler().runTask(plugin, () -> {
-                            try { refreshIfStillOpen(p); } finally { endAction(p.getUniqueId()); }
+                            try { refreshIfStillOpen(p); }
+                            finally { endAction(p.getUniqueId()); }
                         })
                 );
             }
         }
     }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onDrag(InventoryDragEvent e) {
+        Inventory top = e.getView().getTopInventory();
+        if (top.getHolder() instanceof HomesHolder || top.getHolder() instanceof DeleteConfirmHolder) {
+            e.setCancelled(true);
+        }
+    }
+
+    @EventHandler
+    public void onClose(InventoryCloseEvent e) {
+        Inventory top = e.getView().getTopInventory();
+        InventoryHolder h = top.getHolder();
+
+        if (h instanceof HomesHolder hh) openMenus.remove(hh.owner());
+        if (h instanceof DeleteConfirmHolder dh) openMenus.remove(dh.owner());
+
+        if (e.getPlayer() instanceof Player p) {
+            endAction(p.getUniqueId());
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Action guard
+    // ---------------------------------------------------------------------
 
     private boolean beginAction(UUID uuid) {
         if (uuid == null) return false;
@@ -399,7 +644,6 @@ public final class HomesMenu implements Listener {
         Long last = lastActionMs.get(uuid);
         if (last != null && (now - last) < clickCooldownMs) return false;
 
-        // in-flight lock
         if (!inFlightActions.add(uuid)) return false;
 
         lastActionMs.put(uuid, now);
@@ -411,9 +655,10 @@ public final class HomesMenu implements Listener {
         inFlightActions.remove(uuid);
     }
 
-    /**
-     * Refreshes by re-fetching homes then re-rendering into the CURRENT open inventory (no flicker).
-     */
+    // ---------------------------------------------------------------------
+    // Refresh homes menu (no flicker)
+    // ---------------------------------------------------------------------
+
     private void refreshIfStillOpen(Player p) {
         if (p == null || !p.isOnline()) return;
 
@@ -444,9 +689,10 @@ public final class HomesMenu implements Listener {
         );
     }
 
-    /**
-     * API-first sethome; fallback to command if API method signature differs.
-     */
+    // ---------------------------------------------------------------------
+    // HuskHomes API-first actions
+    // ---------------------------------------------------------------------
+
     private CompletableFuture<Boolean> doSetHomeApiFirst(Player p, String homeName) {
         try {
             HuskHomesAPI api = HuskHomesAPI.getInstance();
@@ -479,9 +725,6 @@ public final class HomesMenu implements Listener {
         return completeAfterTicks(12L);
     }
 
-    /**
-     * API-first delete home; fallback to command if API method signature differs.
-     */
     private CompletableFuture<Boolean> doDeleteHomeApiFirst(Player p, String homeName) {
         try {
             HuskHomesAPI api = HuskHomesAPI.getInstance();
@@ -512,23 +755,9 @@ public final class HomesMenu implements Listener {
         return cf;
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onDrag(InventoryDragEvent e) {
-        Inventory top = e.getView().getTopInventory();
-        if (top.getHolder() instanceof HomesHolder) e.setCancelled(true);
-    }
-
-    @EventHandler
-    public void onClose(InventoryCloseEvent e) {
-        Inventory top = e.getView().getTopInventory();
-        if (top.getHolder() instanceof HomesHolder holder) {
-            openMenus.remove(holder.owner());
-        }
-        // ensure any in-flight lock clears if they close mid-action
-        if (e.getPlayer() instanceof Player p) {
-            endAction(p.getUniqueId());
-        }
-    }
+    // ---------------------------------------------------------------------
+    // Slot resolve helpers
+    // ---------------------------------------------------------------------
 
     private enum HomeSlotKind { TELEPORT, ACTION }
 
@@ -561,9 +790,9 @@ public final class HomesMenu implements Listener {
         return configured == null ? def : configured;
     }
 
-    // ------------------------------------------------------------
+    // ---------------------------------------------------------------------
     // Mapping + layout helpers
-    // ------------------------------------------------------------
+    // ---------------------------------------------------------------------
 
     private Map<Integer, String> buildSlotToActualHomeNameMap(List<Home> homes, int maxHomes) {
         Map<Integer, String> out = new HashMap<>();
@@ -617,14 +846,9 @@ public final class HomesMenu implements Listener {
 
     private int computeLinesThatFit(Layout l) {
         int invRows = l.rows;
-        int teleportStartRow = l.teleportStartSlot / 9;
-        int actionStartRow = l.actionStartSlot / 9;
 
         int lines = 0;
         for (int line = 0; line < 100; line++) {
-            int tRow = teleportStartRow + (line * l.lineStrideRows);
-            int aRow = actionStartRow + (line * l.lineStrideRows);
-
             int bedSlot = slotForTeleport(l, line, 0);
             int actionSlot = slotForAction(l, line, 0);
 
@@ -634,9 +858,6 @@ public final class HomesMenu implements Listener {
             int actionBaseCol = l.actionStartSlot % 9;
             if (bedBaseCol + (l.columns - 1) > 8) break;
             if (actionBaseCol + (l.columns - 1) > 8) break;
-
-            if (tRow < 0 || tRow >= invRows) break;
-            if (aRow < 0 || aRow >= invRows) break;
 
             lines++;
         }
@@ -676,9 +897,9 @@ public final class HomesMenu implements Listener {
         return Math.max(lo, Math.min(hi, v));
     }
 
-    // ------------------------------------------------------------
+    // ---------------------------------------------------------------------
     // Max homes logic (unchanged)
-    // ------------------------------------------------------------
+    // ---------------------------------------------------------------------
 
     private int getMaxHomes(Player p) {
         int base = readHuskHomesMaxHomesFromConfig();

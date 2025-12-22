@@ -332,15 +332,15 @@ menus:
     home_items:
       teleport:
         material: BLUE_BED
-        name: "&f%home_name%"
+        name: "&bHOME %home_name%"
         lore:
-          - "&7Click to teleport"
+          - "&7Click to teleport to your home"
         glow: false
         custom_model_data: 0
 
       empty_bed:
         material: WHITE_BED
-        name: " "
+        name: "&fNO HOME SET"
         lore: []
         glow: false
         custom_model_data: 0
@@ -355,9 +355,9 @@ menus:
 
       delete_action:
         material: LIGHT_BLUE_DYE
-        name: "&b%home_name%"
+        name: "&bHOME %home_name%"
         lore:
-          - "&fClick to delete %home_name%"
+          - "&fClick to delete HOME %home_name%"
         glow: false
         custom_model_data: 0
 
@@ -399,3 +399,44 @@ menus:
           - "&7Close this menu"
         glow: false
         custom_model_data: 0
+
+    # Delete confirmation GUI (opened when clicking delete_action)
+    delete_confirm:
+      enabled: true
+      title: "&7Confirm Delete"
+      rows: 3
+
+      use_filler: false
+      filler:
+        material: GRAY_STAINED_GLASS_PANE
+        name: " "
+        lore: []
+        glow: false
+        custom_model_data: 0
+
+      items:
+        cancel:
+          slot: 11
+          material: RED_STAINED_GLASS_PANE
+          name: "&cCANCEL"
+          lore:
+            - "&7Click to cancel!"
+          glow: false
+          custom_model_data: 0
+
+        home:
+          slot: 13
+          material: LIGHT_BLUE_DYE
+          name: "&bHOME %home_name%"
+          lore: []
+          glow: false
+          custom_model_data: 0
+
+        confirm:
+          slot: 15
+          material: LIME_STAINED_GLASS_PANE
+          name: "&aCONFIRM"
+          lore:
+            - "&7Click to delete"
+          glow: false
+          custom_model_data: 0

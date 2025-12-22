@@ -12,6 +12,7 @@ package net.chumbucket.huskhomesmenus;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import net.kyori.adventure.text.format.TextDecoration; // ✅ NEW
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.configuration.ConfigurationSection;
@@ -235,11 +236,31 @@ public final class HHMConfig {
         );
     }
 
+    // ---------------------------------------------------------------------
+    // ✅ NO-ITALICS FIX (the real fix)
+    // ---------------------------------------------------------------------
+
+    private Component deitalicize(Component c) {
+        if (c == null) return Component.empty();
+
+        // force on this node
+        Component out = c.decoration(TextDecoration.ITALIC, false);
+
+        // force on children
+        if (!out.children().isEmpty()) {
+            List<Component> kids = new ArrayList<>(out.children().size());
+            for (Component child : out.children()) {
+                kids.add(deitalicize(child));
+            }
+            out = out.children(kids);
+        }
+
+        return out;
+    }
+
     /**
      * Build an ItemStack from a template + placeholders.
      * Placeholders are applied to name and lore.
-     *
-     * NOTE: Uses simple loops (no streams) to avoid compiler generic inference issues.
      */
     public ItemStack buildItem(MenuItemTemplate t, Map<String, String> placeholders) {
         if (t == null) return null;
@@ -251,21 +272,22 @@ public final class HHMConfig {
         if (meta == null) return item;
 
         final String name = applyPlaceholders(t.name(), placeholders);
+        final String safeName = (name == null || name.isBlank()) ? " " : name;
+
+        // ✅ Force NO-ITALICS on display name
+        meta.displayName(deitalicize(AMP.deserialize(safeName)));
 
         final List<String> rawLore = (t.lore() == null) ? Collections.emptyList() : t.lore();
-        final List<Component> loreComponents = new ArrayList<>(rawLore.size());
-        for (String line : rawLore) {
-            String applied = applyPlaceholders(line, placeholders);
-            if (applied != null && !applied.isBlank()) {
-                loreComponents.add(AMP.deserialize(applied));
+        if (!rawLore.isEmpty()) {
+            final List<Component> loreComponents = new ArrayList<>(rawLore.size());
+            for (String line : rawLore) {
+                String applied = applyPlaceholders(line, placeholders);
+                if (applied != null && !applied.isBlank()) {
+                    // ✅ Force NO-ITALICS on lore line
+                    loreComponents.add(deitalicize(AMP.deserialize(applied)));
+                }
             }
-        }
-
-        if (name != null && !name.isBlank()) {
-            meta.displayName(AMP.deserialize(name));
-        }
-        if (!loreComponents.isEmpty()) {
-            meta.lore(loreComponents);
+            if (!loreComponents.isEmpty()) meta.lore(loreComponents);
         }
 
         if (t.customModelData() > 0) {
