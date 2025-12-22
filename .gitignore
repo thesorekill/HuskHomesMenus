@@ -1,0 +1,10 @@
+﻿# Maven build output
+/target/
+*.class
+
+# IDE noise (optional)
+.idea/
+*.iml
+.classpath
+.project
+.settings/
