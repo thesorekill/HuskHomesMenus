@@ -11,6 +11,10 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
 public final class UpdateChecker {
 
@@ -19,55 +23,73 @@ public final class UpdateChecker {
     public record Result(Status status, String currentVersion, String latestVersion) { }
 
     private final JavaPlugin plugin;
+    private final HHMConfig config; // ✅ NEW
     private final int resourceId;
 
-    // Cache so we can notify on join without hammering Spiget
     private volatile String cachedLatest = null;
     private volatile long lastCheckMs = 0L;
 
-    // 30 minutes cache (tweak if you want)
     private static final long CACHE_MS = 30L * 60L * 1000L;
 
-    public UpdateChecker(JavaPlugin plugin, int resourceId) {
+    private static final Pattern NAME_FIELD =
+            Pattern.compile("\"name\"\\s*:\\s*\"([^\"]+)\"");
+
+    private static final LegacyComponentSerializer AMP = LegacyComponentSerializer.legacyAmpersand();
+
+    // ✅ Updated constructor
+    public UpdateChecker(JavaPlugin plugin, HHMConfig config, int resourceId) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
+        this.config = Objects.requireNonNull(config, "config");
         this.resourceId = resourceId;
     }
 
     public CompletableFuture<Result> checkNowAsync() {
         return CompletableFuture.supplyAsync(() -> {
             final String current = safe(getCurrentVersionBestEffort());
-
             try {
-                String latest = fetchLatestVersionFromSpigot();
-                cachedLatest = latest;
-                lastCheckMs = System.currentTimeMillis();
+                final String latest = safe(fetchLatestVersionFromSpigot());
 
-                if (latest == null || latest.isBlank() || current.isBlank()) {
+                if (!latest.isBlank()) {
+                    cachedLatest = latest;
+                    lastCheckMs = System.currentTimeMillis();
+                }
+
+                if (latest.isBlank() || current.isBlank()) {
                     return new Result(Status.UNKNOWN, current, latest);
                 }
 
-                // Simple compare: if not equal -> consider outdated.
-                if (!current.equalsIgnoreCase(latest.trim())) {
-                    return new Result(Status.OUTDATED, current, latest.trim());
-                }
-                return new Result(Status.UP_TO_DATE, current, latest.trim());
+                // (Optional but recommended) Only OUTDATED if current < latest
+                int cmp = compareVersions(current, latest);
+                if (cmp < 0) return new Result(Status.OUTDATED, current, latest);
+                return new Result(Status.UP_TO_DATE, current, latest);
 
             } catch (Throwable t) {
-                return new Result(Status.UNKNOWN, current, cachedLatest);
+                plugin.getLogger().warning("[UpdateChecker] Failed to check updates: "
+                        + t.getClass().getSimpleName() + ": " + t.getMessage());
+                return new Result(Status.UNKNOWN, current, safe(cachedLatest));
             }
         });
     }
 
     public CompletableFuture<Result> checkIfNeededAsync() {
         long now = System.currentTimeMillis();
+
         if (cachedLatest != null && (now - lastCheckMs) < CACHE_MS) {
             String current = safe(getCurrentVersionBestEffort());
-            Status st = current.equalsIgnoreCase(safe(cachedLatest)) ? Status.UP_TO_DATE : Status.OUTDATED;
-            return CompletableFuture.completedFuture(new Result(st, current, cachedLatest));
+            String latest = safe(cachedLatest);
+
+            if (current.isBlank() || latest.isBlank()) {
+                return CompletableFuture.completedFuture(new Result(Status.UNKNOWN, current, latest));
+            }
+
+            Status st = (compareVersions(current, latest) < 0) ? Status.OUTDATED : Status.UP_TO_DATE;
+            return CompletableFuture.completedFuture(new Result(st, current, latest));
         }
+
         return checkNowAsync();
     }
 
+    // ✅ Uses config.prefix()
     public void notifyPlayerIfOutdated(Player p, String permission) {
         if (p == null) return;
         if (permission != null && !permission.isBlank() && !p.hasPermission(permission)) return;
@@ -76,23 +98,22 @@ public final class UpdateChecker {
         String latest = safe(cachedLatest);
 
         if (latest.isBlank() || current.isBlank()) return;
-        if (current.equalsIgnoreCase(latest)) return;
 
-        p.sendMessage("§6[HuskHomesMenus] §eUpdate available: §f" + current + " §e→ §a" + latest);
-        p.sendMessage("§7Spigot: §fhttps://www.spigotmc.org/resources/" + resourceId + "/");
+        // Only notify if current < latest
+        if (compareVersions(current, latest) >= 0) return;
+
+        p.sendMessage(AMP.deserialize(config.prefix() + "&eUpdate available: &f" + current + " &e→ &a" + latest));
+        p.sendMessage(AMP.deserialize(config.prefix() + "&7Spigot: &fhttps://www.spigotmc.org/resources/" + resourceId + "/"));
     }
 
     private String fetchLatestVersionFromSpigot() throws Exception {
-        // Spiget API (used for Spigot resources):
-        // https://api.spiget.org/v2/resources/<id>/versions/latest
-        // returns JSON that includes "name": "<version>"
         URI uri = URI.create("https://api.spiget.org/v2/resources/" + resourceId + "/versions/latest");
         URL url = uri.toURL();
 
         HttpURLConnection con = (HttpURLConnection) url.openConnection();
         con.setRequestMethod("GET");
-        con.setConnectTimeout(4000);
-        con.setReadTimeout(4000);
+        con.setConnectTimeout(6000);
+        con.setReadTimeout(6000);
         con.setRequestProperty("User-Agent", "HuskHomesMenus Update Checker");
 
         int code = con.getResponseCode();
@@ -105,21 +126,19 @@ public final class UpdateChecker {
             String line;
             while ((line = br.readLine()) != null) sb.append(line);
 
-            // Very small JSON parse (no libs):
-            // example: {"id":123,"name":"1.1.3", ...}
             String json = sb.toString();
-            String key = "\"name\":\"";
-            int i = json.indexOf(key);
-            if (i == -1) return null;
-            int start = i + key.length();
-            int end = json.indexOf("\"", start);
-            if (end == -1) return null;
-            return json.substring(start, end);
+
+            Matcher m = NAME_FIELD.matcher(json);
+            if (!m.find()) {
+                plugin.getLogger().warning("[UpdateChecker] Could not parse latest version from Spiget response: "
+                        + (json.length() > 250 ? json.substring(0, 250) + "..." : json));
+                return "";
+            }
+            return safe(m.group(1));
         }
     }
 
     private String getCurrentVersionBestEffort() {
-        // Prefer Paper's PluginMeta (getPluginMeta().getVersion()) when present.
         try {
             Object meta = plugin.getClass().getMethod("getPluginMeta").invoke(plugin);
             if (meta != null) {
@@ -128,7 +147,6 @@ public final class UpdateChecker {
             }
         } catch (Throwable ignored) { }
 
-        // Fallback: call getDescription() via reflection to avoid deprecation warning
         try {
             Object desc = plugin.getClass().getMethod("getDescription").invoke(plugin);
             if (desc != null) {
@@ -140,8 +158,24 @@ public final class UpdateChecker {
         return "";
     }
 
-    // ✅ Added (fixes: "safe(String) is undefined for type UpdateChecker")
     private static String safe(String s) {
         return s == null ? "" : s.trim();
+    }
+
+    // ✅ Simple numeric compare for versions like 1.2.3
+    private static int compareVersions(String a, String b) {
+        if (a == null) a = "";
+        if (b == null) b = "";
+
+        String[] pa = a.trim().split("[^0-9]+");
+        String[] pb = b.trim().split("[^0-9]+");
+
+        int n = Math.max(pa.length, pb.length);
+        for (int i = 0; i < n; i++) {
+            int ai = (i < pa.length && !pa[i].isEmpty()) ? Integer.parseInt(pa[i]) : 0;
+            int bi = (i < pb.length && !pb[i].isEmpty()) ? Integer.parseInt(pb[i]) : 0;
+            if (ai != bi) return Integer.compare(ai, bi);
+        }
+        return 0;
     }
 }

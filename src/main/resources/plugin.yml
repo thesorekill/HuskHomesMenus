@@ -11,8 +11,8 @@ softdepend: [PlaceholderAPI, ProtocolLib]
 commands:
   hhm:
     description: Reloads the plugin
-    usage: /hhm reload
-    permission: huskhomesmenus.reload
+    usage: /hhm <reload|version>
+    permission: huskhomesmenus.admin
 
   tpa:
     description: Send a teleport request to a player (HuskHomesMenus wrapper)
@@ -65,7 +65,7 @@ permissions:
     description: Grants all HuskHomesMenus permissions
     default: op
     children:
-      huskhomesmenus.reload: true
+      huskhomesmenus.admin: true
       huskhomesmenus.tpatoggle: true
       huskhomesmenus.tpaheretoggle: true
       huskhomesmenus.tpa: true
@@ -77,9 +77,9 @@ permissions:
       huskhomesmenus.home: true
       huskhomesmenus.homemenu: true
 
-  huskhomesmenus.reload:
-    description: Reloads the plugin
-    default: false
+  huskhomesmenus.admin:
+    description: Allows using /hhm version (and other admin info commands)
+    default: op
 
   huskhomesmenus.tpatoggle:
     description: Allows toggling /tpa request reception

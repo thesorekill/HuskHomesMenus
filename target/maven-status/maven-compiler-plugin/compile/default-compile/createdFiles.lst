@@ -31,6 +31,7 @@ net\chumbucket\huskhomesmenus\ConfirmRequestMenu$ConfirmHolder.class
 net\chumbucket\huskhomesmenus\HomesMenu$HomeSlotKind.class
 net\chumbucket\huskhomesmenus\HuskHomesMenus.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$3.class
+net\chumbucket\huskhomesmenus\HHMCommand$1.class
 net\chumbucket\huskhomesmenus\OptionalProxyMessenger.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$Session.class
 net\chumbucket\huskhomesmenus\HomesCommand.class

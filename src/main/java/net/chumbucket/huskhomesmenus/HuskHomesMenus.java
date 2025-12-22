@@ -162,18 +162,30 @@ public final class HuskHomesMenus extends JavaPlugin {
         // ✅ Update Checker init + listeners (no impact on existing logic)
         try {
             if (getConfig().getBoolean("update_checker.enabled", true)) {
-                this.updateChecker = new UpdateChecker(this, 130925);
+                this.updateChecker = new UpdateChecker(this, config, 130925);
 
                 // Console notify (if enabled)
                 if (getConfig().getBoolean("update_checker.notify_console", true)) {
                     this.updateChecker.checkNowAsync().thenAccept(result -> {
                         if (result == null) return;
+
+                        final String spigotUrl = "https://www.spigotmc.org/resources/huskhomesmenus-1-21-x.130925/";
+
                         if (result.status() == UpdateChecker.Status.OUTDATED) {
-                            final String spigotUrl = "https://www.spigotmc.org/resources/huskhomesmenus-1-21-x.130925/";
                             getLogger().warning("A new version of HuskHomesMenus is available! "
                                     + "Current: " + result.currentVersion()
                                     + " Latest: " + result.latestVersion()
                                     + " (" + spigotUrl + ")");
+                        } else if (result.status() == UpdateChecker.Status.UP_TO_DATE) {
+                            getLogger().info("HuskHomesMenus is up to date. "
+                                    + "Current: " + result.currentVersion()
+                                    + " Latest: " + result.latestVersion());
+                        } else {
+                            getLogger().warning("HuskHomesMenus update check: could not determine latest version right now. "
+                                    + "Current: " + result.currentVersion()
+                                    + (result.latestVersion() != null && !result.latestVersion().isBlank()
+                                        ? " CachedLatest: " + result.latestVersion()
+                                        : ""));
                         }
                     });
                 }

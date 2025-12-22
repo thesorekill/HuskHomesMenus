@@ -11,7 +11,7 @@
 # │  PERMISSIONS                                                 │
 # └──────────────────────────────────────────────────────────────┘
 # Command permissions
-#   huskhomesmenus.reload        -> /hhm reload
+#   huskhomesmenus.admin         -> /hhm <version | reload>
 #   huskhomesmenus.tpa           -> /tpa 
 #   huskhomesmenus.tpahere       -> /tpahere 
 #   huskhomesmenus.tpaccept      -> /tpaccept 
