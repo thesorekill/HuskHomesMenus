@@ -338,6 +338,7 @@ menus:
     enabled: true
     title: "&7HOMES"
     rows: 4
+    # Turning center to true will center the beds regardless of the layout.
     center: false
 
     # Background filler behavior
