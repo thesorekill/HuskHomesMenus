@@ -20,6 +20,12 @@ Whether you run a single survival server or a multi-server proxy network, HuskHo
 - ⭐ **Player-controlled toggles** — Allow players to opt out of requests, disable menus, or automatically accept teleport requests.
 - ⭐ **Lightweight & focused** — No bloated features — HuskHomesMenus does one thing well and stays out of the way.
 
+TP Menu:
+![](image.png)
+
+Home Menu:
+![](image-1.png)
+
 ## Requirements
 
 - Java 21
