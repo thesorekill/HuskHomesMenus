@@ -10,14 +10,15 @@
 
 package net.chumbucket.huskhomesmenus;
 
-import net.kyori.adventure.text.Component; // ✅ NEW
-import net.kyori.adventure.text.format.TextDecoration; // ✅ NEW (real no-italics fix)
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import net.william278.huskhomes.api.HuskHomesAPI;
 import net.william278.huskhomes.position.Home;
 import net.william278.huskhomes.user.OnlineUser;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -76,9 +77,7 @@ public final class HomesMenu implements Listener {
 
         if (!out.children().isEmpty()) {
             List<Component> kids = new ArrayList<>(out.children().size());
-            for (Component child : out.children()) {
-                kids.add(deitalicize(child));
-            }
+            for (Component child : out.children()) kids.add(deitalicize(child));
             out = out.children(kids);
         }
 
@@ -95,15 +94,11 @@ public final class HomesMenu implements Listener {
             var meta = item.getItemMeta();
             if (meta == null) return item;
 
-            // Always ensure a non-empty display name so it doesn't default-style weirdly
             Component name = meta.displayName();
-            if (name == null) {
-                name = AMP.deserialize(" ");
-            }
+            if (name == null) name = AMP.deserialize(" ");
 
             meta.displayName(deitalicize(name));
 
-            // Lore: force non-italic on every line if present
             List<Component> lore = meta.lore();
             if (lore != null && !lore.isEmpty()) {
                 List<Component> fixed = new ArrayList<>(lore.size());
@@ -333,6 +328,18 @@ public final class HomesMenu implements Listener {
             for (int i = 0; i < inv.getSize(); i++) inv.setItem(i, filler);
         }
 
+        // name -> Home object
+        Map<String, Home> homeByName = new HashMap<>();
+        if (homes != null) {
+            for (Home h : homes) {
+                if (h == null) continue;
+                try {
+                    String n = h.getName();
+                    if (n != null && !n.isBlank()) homeByName.put(n.trim(), h);
+                } catch (Throwable ignored) {}
+            }
+        }
+
         Map<Integer, String> slotMap = buildSlotToActualHomeNameMap(homes, maxHomes);
         holder.slotToActualHomeName().clear();
         holder.slotToActualHomeName().putAll(slotMap);
@@ -359,6 +366,28 @@ public final class HomesMenu implements Listener {
 
             Map<String, String> ph = baseHomePlaceholders(homeNumber, page, pages, maxHomes);
             ph.put("%home_name%", exists ? actualName : "");
+
+            // ✅ NEW placeholders (dimension/server/world)
+            if (exists) {
+                Home h = homeByName.get(actualName);
+                String worldName = resolveHomeWorldName(h);
+                String serverId = resolveHomeServerId(h);
+
+                String shownServer = "";
+                if (config.proxyEnabled()) {
+                    shownServer = (serverId == null) ? "" : serverId;
+                }
+
+                String dimension = resolveHomeDimensionBestEffort(worldName, shownServer);
+
+                ph.put("%home_world%", worldName == null ? "" : worldName);
+                ph.put("%home_server%", shownServer == null ? "" : shownServer);
+                ph.put("%home_dimension%", dimension == null ? "" : dimension);
+            } else {
+                ph.put("%home_world%", "");
+                ph.put("%home_server%", "");
+                ph.put("%home_dimension%", "");
+            }
 
             if (exists) {
                 inv.setItem(bedSlot, buildNoItalics(savedBedTpl, ph));
@@ -389,6 +418,86 @@ public final class HomesMenu implements Listener {
             inv.setItem(pageSlot, buildNoItalics(config.homesNavPageItem(), navPh));
             if (page < pages - 1) inv.setItem(nextSlot, buildNoItalics(config.homesNavNextItem(), navPh));
             inv.setItem(closeSlot, buildNoItalics(config.homesNavCloseItem(), navPh));
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // ✅ NEW: HuskHomes Home -> (world/server/dimension) placeholder helpers
+    // ---------------------------------------------------------------------
+
+    private String resolveHomeWorldName(Home h) {
+        if (h == null) return "";
+
+        // Many HuskHomes versions: Home extends Position and has getWorld()
+        Object worldObj = callNoArg(h, "getWorld");
+        if (worldObj == null) worldObj = callNoArg(h, "world");
+        if (worldObj == null) return "";
+
+        // HuskHomes World object often has getName()/name()
+        Object name = callNoArg(worldObj, "getName");
+        if (name == null) name = callNoArg(worldObj, "name");
+        if (name instanceof String s) return s;
+        return "";
+    }
+
+    private String resolveHomeServerId(Home h) {
+        if (h == null) return "";
+
+        Object server = callNoArg(h, "getServer");
+        if (server == null) server = callNoArg(h, "server");
+        if (server == null) server = callNoArg(h, "getServerName");
+        if (server == null) server = callNoArg(h, "getServerId");
+        if (server == null) server = callNoArg(h, "getServerID");
+
+        if (server instanceof String s) return s;
+        return "";
+    }
+
+    private String resolveHomeDimensionBestEffort(String worldName, String homeServerShown) {
+        // If proxy disabled OR home server is this backend OR server unknown -> try to resolve Bukkit world
+        boolean localish = !config.proxyEnabled()
+                || homeServerShown == null
+                || homeServerShown.isBlank()
+                || equalsIgnoreCaseTrim(homeServerShown, config.backendName());
+
+        String wn = (worldName == null) ? "" : worldName.trim();
+
+        if (localish && !wn.isBlank()) {
+            try {
+                World bw = Bukkit.getWorld(wn);
+                if (bw != null) {
+                    return switch (bw.getEnvironment()) {
+                        case NORMAL -> "Overworld";
+                        case NETHER -> "Nether";
+                        case THE_END -> "The End";
+                        default -> bw.getEnvironment().name();
+                    };
+                }
+            } catch (Throwable ignored) {}
+        }
+
+        // Remote / unknown: best-effort guess by common naming
+        String lower = wn.toLowerCase(Locale.ROOT);
+        if (lower.contains("nether")) return "Nether";
+        if (lower.contains("the_end") || lower.endsWith("_end") || lower.contains(" end")) return "The End";
+        if (!wn.isBlank()) return "Overworld"; // common default if you keep standard naming
+
+        return "";
+    }
+
+    private boolean equalsIgnoreCaseTrim(String a, String b) {
+        if (a == null || b == null) return false;
+        return a.trim().equalsIgnoreCase(b.trim());
+    }
+
+    private Object callNoArg(Object target, String methodName) {
+        if (target == null || methodName == null) return null;
+        try {
+            Method m = target.getClass().getMethod(methodName);
+            m.setAccessible(true);
+            return m.invoke(target);
+        } catch (Throwable ignored) {
+            return null;
         }
     }
 

@@ -334,6 +334,9 @@ menus:
         material: BLUE_BED
         name: "&bHOME %home_name%"
         lore:
+          #- "&7Server: %home_server%" #This is if you have proxy enabled. If proxy isn't enabled then it will just return blank
+          #- "&7World: %home_world%" #This is for when u have multiple worlds being used
+          - "&7Dimension: %home_dimension%" #Shows you what dimension the home is in (Overworld, Nether, The End)
           - "&7Click to teleport to your home"
         glow: false
         custom_model_data: 0

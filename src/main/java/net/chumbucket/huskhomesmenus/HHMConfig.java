@@ -46,7 +46,8 @@ public final class HHMConfig {
     }
 
     public boolean proxyEnabled() {
-        return plugin.getConfig().getBoolean("proxy.enabled", true);
+        // ✅ default false to match your config.yml
+        return plugin.getConfig().getBoolean("proxy.enabled", false);
     }
 
     public String backendName() {
@@ -243,15 +244,11 @@ public final class HHMConfig {
     private Component deitalicize(Component c) {
         if (c == null) return Component.empty();
 
-        // force on this node
         Component out = c.decoration(TextDecoration.ITALIC, false);
 
-        // force on children
         if (!out.children().isEmpty()) {
             List<Component> kids = new ArrayList<>(out.children().size());
-            for (Component child : out.children()) {
-                kids.add(deitalicize(child));
-            }
+            for (Component child : out.children()) kids.add(deitalicize(child));
             out = out.children(kids);
         }
 
@@ -274,7 +271,6 @@ public final class HHMConfig {
         final String name = applyPlaceholders(t.name(), placeholders);
         final String safeName = (name == null || name.isBlank()) ? " " : name;
 
-        // ✅ Force NO-ITALICS on display name
         meta.displayName(deitalicize(AMP.deserialize(safeName)));
 
         final List<String> rawLore = (t.lore() == null) ? Collections.emptyList() : t.lore();
@@ -283,7 +279,6 @@ public final class HHMConfig {
             for (String line : rawLore) {
                 String applied = applyPlaceholders(line, placeholders);
                 if (applied != null && !applied.isBlank()) {
-                    // ✅ Force NO-ITALICS on lore line
                     loreComponents.add(deitalicize(AMP.deserialize(applied)));
                 }
             }
@@ -294,9 +289,7 @@ public final class HHMConfig {
             try { meta.setCustomModelData(t.customModelData()); } catch (Throwable ignored) {}
         }
 
-        if (t.glow()) {
-            applyGlow(meta);
-        }
+        if (t.glow()) applyGlow(meta);
 
         try { meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES); } catch (Throwable ignored) {}
 
@@ -318,21 +311,18 @@ public final class HHMConfig {
      * Resolve an enchantment for glow WITHOUT referencing deprecated methods/fields at compile time.
      */
     private Enchantment resolveGlowEnchantNoDeprecation() {
-        // 1) Try constant field UNBREAKING (reflection avoids compile-time dependency)
         try {
             Field f = Enchantment.class.getField("UNBREAKING");
             Object o = f.get(null);
             if (o instanceof Enchantment e) return e;
         } catch (Throwable ignored) {}
 
-        // 2) Try getByKey(NamespacedKey) via reflection
         try {
             Method m = Enchantment.class.getMethod("getByKey", NamespacedKey.class);
             Object o = m.invoke(null, NamespacedKey.minecraft("unbreaking"));
             if (o instanceof Enchantment e) return e;
         } catch (Throwable ignored) {}
 
-        // 3) Try getByName(String) via reflection (older servers)
         try {
             Method m = Enchantment.class.getMethod("getByName", String.class);
             Object o = m.invoke(null, "UNBREAKING");
