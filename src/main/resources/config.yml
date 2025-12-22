@@ -11,7 +11,7 @@
 # │  PERMISSIONS                                                 │
 # └──────────────────────────────────────────────────────────────┘
 # Command permissions
-#   huskhomesmenus.reload        -> /
+#   huskhomesmenus.reload        -> /hhm reload
 #   huskhomesmenus.tpa           -> /tpa 
 #   huskhomesmenus.tpahere       -> /tpahere 
 #   huskhomesmenus.tpaccept      -> /tpaccept 
@@ -335,8 +335,9 @@ menus:
         name: "&bHOME %home_name%"
         lore:
           #- "&7Server: %home_server%" #This is if you have proxy enabled. If proxy isn't enabled then it will just return blank
-          #- "&7World: %home_world%" #This is for when u have multiple worlds being used
+          - "&7World: %home_world%" #This is for when u have multiple worlds being used
           - "&7Dimension: %home_dimension%" #Shows you what dimension the home is in (Overworld, Nether, The End)
+          - "&7Coords: %home_coords%" #You can use %home_coords% to get the coords of the home or %home_X%, %home_Y%, and %home_Z% to display individual coords.
           - "&7Click to teleport to your home"
         glow: false
         custom_model_data: 0

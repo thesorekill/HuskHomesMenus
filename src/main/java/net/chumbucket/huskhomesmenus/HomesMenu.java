@@ -367,9 +367,10 @@ public final class HomesMenu implements Listener {
             Map<String, String> ph = baseHomePlaceholders(homeNumber, page, pages, maxHomes);
             ph.put("%home_name%", exists ? actualName : "");
 
-            // ✅ NEW placeholders (dimension/server/world)
+            // ✅ NEW placeholders (dimension/server/world/coords)
             if (exists) {
                 Home h = homeByName.get(actualName);
+
                 String worldName = resolveHomeWorldName(h);
                 String serverId = resolveHomeServerId(h);
 
@@ -380,13 +381,29 @@ public final class HomesMenu implements Listener {
 
                 String dimension = resolveHomeDimensionBestEffort(worldName, shownServer);
 
+                // coords (best-effort across HuskHomes versions)
+                String x = resolveHomeCoordInt(h, "getX");
+                String y = resolveHomeCoordInt(h, "getY");
+                String z = resolveHomeCoordInt(h, "getZ");
+                String coords = (!x.isBlank() && !y.isBlank() && !z.isBlank()) ? (x + ", " + y + ", " + z) : "";
+
                 ph.put("%home_world%", worldName == null ? "" : worldName);
                 ph.put("%home_server%", shownServer == null ? "" : shownServer);
                 ph.put("%home_dimension%", dimension == null ? "" : dimension);
+
+                ph.put("%home_x%", x);
+                ph.put("%home_y%", y);
+                ph.put("%home_z%", z);
+                ph.put("%home_coords%", coords);
             } else {
                 ph.put("%home_world%", "");
                 ph.put("%home_server%", "");
                 ph.put("%home_dimension%", "");
+
+                ph.put("%home_x%", "");
+                ph.put("%home_y%", "");
+                ph.put("%home_z%", "");
+                ph.put("%home_coords%", "");
             }
 
             if (exists) {
@@ -422,7 +439,7 @@ public final class HomesMenu implements Listener {
     }
 
     // ---------------------------------------------------------------------
-    // ✅ NEW: HuskHomes Home -> (world/server/dimension) placeholder helpers
+    // ✅ NEW: HuskHomes Home -> (world/server/dimension/coords) placeholder helpers
     // ---------------------------------------------------------------------
 
     private String resolveHomeWorldName(Home h) {
@@ -481,6 +498,26 @@ public final class HomesMenu implements Listener {
         if (lower.contains("nether")) return "Nether";
         if (lower.contains("the_end") || lower.endsWith("_end") || lower.contains(" end")) return "The End";
         if (!wn.isBlank()) return "Overworld"; // common default if you keep standard naming
+
+        return "";
+    }
+
+    // ✅ Coords helper (works across HuskHomes versions)
+    private String resolveHomeCoordInt(Home h, String getterName) {
+        if (h == null || getterName == null) return "";
+
+        // Try directly on Home (getX/getY/getZ)
+        Object v = callNoArg(h, getterName);
+
+        // Try nested position (getPosition()/position())
+        if (v == null) {
+            Object pos = callNoArg(h, "getPosition");
+            if (pos == null) pos = callNoArg(h, "position");
+            if (pos != null) v = callNoArg(pos, getterName);
+        }
+
+        if (v instanceof Number n) return String.valueOf(n.intValue());
+        if (v instanceof String s) return s.trim();
 
         return "";
     }
