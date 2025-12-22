@@ -338,6 +338,7 @@ menus:
     enabled: true
     title: "&7HOMES"
     rows: 4
+    center: false
 
     # Background filler behavior
     use_filler: false
