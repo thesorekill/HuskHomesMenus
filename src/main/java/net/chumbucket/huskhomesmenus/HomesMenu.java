@@ -30,7 +30,9 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
+import java.lang.reflect.Method;
 import java.util.*;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -47,6 +49,11 @@ public final class HomesMenu implements Listener {
     private final HHMConfig config;
 
     private final Set<UUID> openMenus = ConcurrentHashMap.newKeySet();
+
+    // --- Anti-spam / in-flight guard (fixes "delete clicked too quickly") ---
+    private final Set<UUID> inFlightActions = ConcurrentHashMap.newKeySet();
+    private final Map<UUID, Long> lastActionMs = new ConcurrentHashMap<>();
+    private final long clickCooldownMs = 250L; // small debounce; adjust if you want
 
     public static final class HomesHolder implements InventoryHolder {
         private final UUID owner;
@@ -94,7 +101,6 @@ public final class HomesMenu implements Listener {
         public Inventory getInventory() { return null; } // not used
     }
 
-    // Frozen layout snapshot used for build + click calculations
     public static final class Layout {
         final int rows;
         final int columns;
@@ -125,21 +131,6 @@ public final class HomesMenu implements Listener {
 
     public boolean isHomesMenuOpen(Player p) {
         return p != null && openMenus.contains(p.getUniqueId());
-    }
-
-    public void closeAllOpenHomesMenus() {
-        for (Player p : Bukkit.getOnlinePlayers()) {
-            if (p == null) continue;
-            Inventory top;
-            try { top = p.getOpenInventory().getTopInventory(); }
-            catch (Throwable ignored) { continue; }
-
-            if (top == null) continue;
-            if (top.getHolder() instanceof HomesHolder) {
-                try { p.closeInventory(); } catch (Throwable ignored) {}
-            }
-        }
-        openMenus.clear();
     }
 
     public void open(Player player) {
@@ -177,12 +168,10 @@ public final class HomesMenu implements Listener {
     }
 
     // ------------------------------------------------------------
-    // Build (config-customizable)
+    // Build / Render
     // ------------------------------------------------------------
 
     private void buildAndOpen(Player player, int requestedPage, int maxHomes, List<Home> homes) {
-
-        // Read layout from config
         final int rows = clamp(config.homesRows(), 1, 6);
         final int cols = clamp(config.homesLayoutColumns(), 1, 9);
 
@@ -196,7 +185,6 @@ public final class HomesMenu implements Listener {
 
         Layout layout = new Layout(rows, cols, teleportStart, actionStart, actionOffsetRows, lineStrideRows, useFiller);
 
-        // Determine how many "lines" fit
         int lines = Math.max(1, computeLinesThatFit(layout));
         int perPage = Math.max(1, lines * cols);
 
@@ -218,61 +206,64 @@ public final class HomesMenu implements Listener {
                 config.homesNavCloseSlot()
         );
 
-        String title = config.homesTitle();
-        Inventory inv = Bukkit.createInventory(holder, rows * 9, AMP.deserialize(title));
+        Inventory inv = Bukkit.createInventory(holder, rows * 9, AMP.deserialize(config.homesTitle()));
+        renderIntoInventory(inv, holder, page, pages, maxHomes, homes);
 
-        // Optional filler
+        player.openInventory(inv);
+        openMenus.add(player.getUniqueId());
+    }
+
+    /**
+     * Re-renders the menu into an existing inventory (no flicker).
+     */
+    private void renderIntoInventory(Inventory inv, HomesHolder holder, int page, int pages, int maxHomes, List<Home> homes) {
+        Layout layout = holder.layout();
+        boolean useFiller = layout.useFiller;
+
+        inv.clear();
+
         if (useFiller) {
             ItemStack filler = config.buildItem(config.homesFillerItem(), Map.of());
-            for (int i = 0; i < inv.getSize(); i++) {
-                inv.setItem(i, filler);
-            }
+            for (int i = 0; i < inv.getSize(); i++) inv.setItem(i, filler);
         }
 
-        // Build slotNumber -> actual home name mapping
         Map<Integer, String> slotMap = buildSlotToActualHomeNameMap(homes, maxHomes);
         holder.slotToActualHomeName().clear();
         holder.slotToActualHomeName().putAll(slotMap);
 
-        // Templates
-        HHMConfig.MenuItemTemplate savedBedTpl = config.homesTeleportItem();     // should be BLUE_BED by default
-        HHMConfig.MenuItemTemplate emptyBedTpl = config.homesEmptyBedItem();    // WHITE_BED by default
-        HHMConfig.MenuItemTemplate emptyActionTpl = config.homesEmptyActionItem(); // GRAY_DYE by default
+        HHMConfig.MenuItemTemplate savedBedTpl = config.homesTeleportItem();
+        HHMConfig.MenuItemTemplate emptyBedTpl = config.homesEmptyBedItem();
+        HHMConfig.MenuItemTemplate emptyActionTpl = config.homesEmptyActionItem();
         HHMConfig.MenuItemTemplate deleteActionTpl = config.homesDeleteActionItem();
 
-        int startHome = page * perPage + 1;
-        int endHome = Math.min(maxHomes, startHome + perPage - 1);
+        int startHome = page * holder.perPage() + 1;
+        int endHome = Math.min(maxHomes, startHome + holder.perPage() - 1);
 
         for (int homeNumber = startHome; homeNumber <= endHome; homeNumber++) {
             int idx = homeNumber - startHome;
-            int line = idx / cols;
-            int col = idx % cols;
+            int line = idx / layout.columns;
+            int col = idx % layout.columns;
 
             int bedSlot = slotForTeleport(layout, line, col);
             int actionSlot = slotForAction(layout, line, col);
-
             if (!slotInInventory(bedSlot, inv.getSize()) || !slotInInventory(actionSlot, inv.getSize())) continue;
 
             String actualName = slotMap.get(homeNumber);
             boolean exists = (actualName != null && !actualName.isBlank());
 
             Map<String, String> ph = baseHomePlaceholders(homeNumber, page, pages, maxHomes);
-            // show REAL home name in display; fallback to the slot number for empty slots if you want
-            ph.put("%home_name%", exists ? actualName : ("Home " + homeNumber));
+            ph.put("%home_name%", exists ? actualName : "");
 
             if (exists) {
-                // BLUE bed (configurable via savedBedTpl) with home name
                 inv.setItem(bedSlot, config.buildItem(savedBedTpl, ph));
                 inv.setItem(actionSlot, config.buildItem(deleteActionTpl, ph));
             } else {
-                // WHITE bed (configurable) above the create action
                 inv.setItem(bedSlot, config.buildItem(emptyBedTpl, ph));
                 inv.setItem(actionSlot, config.buildItem(emptyActionTpl, ph));
             }
         }
 
-        // Nav items
-        if (navEnabled) {
+        if (holder.navEnabled()) {
             int prevPage = Math.max(1, page);
             int nextPage = Math.min(pages, page + 2);
 
@@ -283,29 +274,297 @@ public final class HomesMenu implements Listener {
             navPh.put("%prev_page%", String.valueOf(prevPage));
             navPh.put("%next_page%", String.valueOf(nextPage));
 
-            int prevSlot = clamp(config.homesNavPrevSlot(), 0, inv.getSize() - 1);
-            int pageSlot = clamp(config.homesNavPageSlot(), 0, inv.getSize() - 1);
-            int nextSlot = clamp(config.homesNavNextSlot(), 0, inv.getSize() - 1);
-            int closeSlot = clamp(config.homesNavCloseSlot(), 0, inv.getSize() - 1);
+            int prevSlot = clamp(holder.navPrevSlot(), 0, inv.getSize() - 1);
+            int pageSlot = clamp(holder.navPageSlot(), 0, inv.getSize() - 1);
+            int nextSlot = clamp(holder.navNextSlot(), 0, inv.getSize() - 1);
+            int closeSlot = clamp(holder.navCloseSlot(), 0, inv.getSize() - 1);
 
             if (page > 0) inv.setItem(prevSlot, config.buildItem(config.homesNavPrevItem(), navPh));
             inv.setItem(pageSlot, config.buildItem(config.homesNavPageItem(), navPh));
             if (page < pages - 1) inv.setItem(nextSlot, config.buildItem(config.homesNavNextItem(), navPh));
             inv.setItem(closeSlot, config.buildItem(config.homesNavCloseItem(), navPh));
         }
+    }
 
-        player.openInventory(inv);
-        openMenus.add(player.getUniqueId());
+    // ------------------------------------------------------------
+    // Click handling (ANTI SPAM + API-first refresh)
+    // ------------------------------------------------------------
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onClick(InventoryClickEvent e) {
+        if (!(e.getWhoClicked() instanceof Player p)) return;
+
+        Inventory top = e.getView().getTopInventory();
+        if (!(top.getHolder() instanceof HomesHolder holder)) return;
+
+        e.setCancelled(true);
+
+        int slot = e.getRawSlot();
+        if (slot < 0 || slot >= top.getSize()) return;
+
+        // Nav
+        if (holder.navEnabled()) {
+            if (slot == clamp(holder.navCloseSlot(), 0, top.getSize() - 1)) {
+                p.closeInventory();
+                return;
+            }
+            if (slot == clamp(holder.navPrevSlot(), 0, top.getSize() - 1) && top.getItem(slot) != null) {
+                open(p, Math.max(0, holder.page() - 1));
+                return;
+            }
+            if (slot == clamp(holder.navNextSlot(), 0, top.getSize() - 1) && top.getItem(slot) != null) {
+                open(p, holder.page() + 1);
+                return;
+            }
+        }
+
+        Layout l = holder.layout();
+        HomeSlotRef ref = resolveHomeSlot(l, slot, holder.perPage());
+        if (ref == null) return;
+
+        int homeNumber = holder.page() * holder.perPage() + ref.indexInPage + 1;
+        if (homeNumber < 1 || homeNumber > holder.maxHomes()) return;
+
+        String actualName = holder.slotToActualHomeName().get(homeNumber);
+        boolean exists = (actualName != null && !actualName.isBlank());
+
+        ItemStack clicked = top.getItem(slot);
+        if (clicked == null || clicked.getType() == Material.AIR) return;
+
+        // Teleport click
+        if (ref.kind == HomeSlotKind.TELEPORT) {
+            Material expectedSavedBed = safeMaterial(config.homesTeleportItem().material(), Material.BLUE_BED);
+            if (!exists) return;
+            if (clicked.getType() != expectedSavedBed) return;
+
+            try { Bukkit.dispatchCommand(p, "huskhomes:home " + actualName); } catch (Throwable ignored) {}
+            p.closeInventory();
+            return;
+        }
+
+        // Action click
+        if (ref.kind == HomeSlotKind.ACTION) {
+
+            // --- debounce / in-flight guard ---
+            if (!beginAction(p.getUniqueId())) {
+                return; // ignore spam clicks
+            }
+
+            Material createMat = safeMaterial(config.homesEmptyActionItem().material(), Material.GRAY_DYE);
+            Material deleteMat = safeMaterial(config.homesDeleteActionItem().material(), Material.LIGHT_BLUE_DYE);
+
+            // If the click isn't actually one of our action buttons, release lock immediately
+            if (clicked.getType() != createMat && clicked.getType() != deleteMat) {
+                endAction(p.getUniqueId());
+                return;
+            }
+
+            // Visually disable the clicked action slot immediately (prevents double click)
+            try {
+                top.setItem(slot, new ItemStack(Material.GRAY_STAINED_GLASS_PANE));
+                p.updateInventory();
+            } catch (Throwable ignored) {}
+
+            if (clicked.getType() == createMat) {
+                String newHomeName = String.valueOf(homeNumber);
+
+                doSetHomeApiFirst(p, newHomeName).whenComplete((ok, err) ->
+                        Bukkit.getScheduler().runTask(plugin, () -> {
+                            try { refreshIfStillOpen(p); } finally { endAction(p.getUniqueId()); }
+                        })
+                );
+                return;
+            }
+
+            if (clicked.getType() == deleteMat) {
+                if (!exists) {
+                    endAction(p.getUniqueId());
+                    return;
+                }
+
+                final String deleteName = actualName; // snapshot
+                doDeleteHomeApiFirst(p, deleteName).whenComplete((ok, err) ->
+                        Bukkit.getScheduler().runTask(plugin, () -> {
+                            try { refreshIfStillOpen(p); } finally { endAction(p.getUniqueId()); }
+                        })
+                );
+            }
+        }
+    }
+
+    private boolean beginAction(UUID uuid) {
+        if (uuid == null) return false;
+
+        long now = System.currentTimeMillis();
+        Long last = lastActionMs.get(uuid);
+        if (last != null && (now - last) < clickCooldownMs) return false;
+
+        // in-flight lock
+        if (!inFlightActions.add(uuid)) return false;
+
+        lastActionMs.put(uuid, now);
+        return true;
+    }
+
+    private void endAction(UUID uuid) {
+        if (uuid == null) return;
+        inFlightActions.remove(uuid);
     }
 
     /**
-     * Build slot -> actual home name map.
-     *
-     * Priority:
-     *  1) If a home name looks like "1" / "Home 1" / "home_1" etc., map it to that slot index.
-     *  2) Any remaining homes (e.g., "Base", "Spawn") are assigned in alphabetical order
-     *     to the first empty slot numbers (1..maxHomes).
+     * Refreshes by re-fetching homes then re-rendering into the CURRENT open inventory (no flicker).
      */
+    private void refreshIfStillOpen(Player p) {
+        if (p == null || !p.isOnline()) return;
+
+        Inventory top = p.getOpenInventory().getTopInventory();
+        if (!(top.getHolder() instanceof HomesHolder holder)) return;
+
+        final int maxHomes = getMaxHomes(p);
+
+        final HuskHomesAPI api;
+        try {
+            api = HuskHomesAPI.getInstance();
+        } catch (Throwable t) {
+            return;
+        }
+
+        final OnlineUser user = api.adaptUser(p);
+
+        api.getUserHomes(user).thenAccept(homeList ->
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!p.isOnline()) return;
+
+                    int pages = Math.max(1, (int) Math.ceil(maxHomes / (double) holder.perPage()));
+                    int page = Math.min(Math.max(0, holder.page()), pages - 1);
+
+                    renderIntoInventory(top, holder, page, pages, maxHomes, homeList == null ? List.of() : homeList);
+                    try { p.updateInventory(); } catch (Throwable ignored) {}
+                })
+        );
+    }
+
+    /**
+     * API-first sethome; fallback to command if API method signature differs.
+     */
+    private CompletableFuture<Boolean> doSetHomeApiFirst(Player p, String homeName) {
+        try {
+            HuskHomesAPI api = HuskHomesAPI.getInstance();
+            OnlineUser user = api.adaptUser(p);
+
+            Object pos = null;
+            try {
+                Method adaptPos = api.getClass().getMethod("adaptPosition", org.bukkit.Location.class);
+                pos = adaptPos.invoke(api, p.getLocation());
+            } catch (Throwable ignored) {}
+
+            if (pos != null) {
+                for (Method m : api.getClass().getMethods()) {
+                    if (!m.getName().equalsIgnoreCase("setHome")) continue;
+                    Class<?>[] pt = m.getParameterTypes();
+                    if (pt.length == 3 && pt[1] == String.class && pt[2].isInstance(pos)) {
+                        Object out = m.invoke(api, user, homeName, pos);
+                        if (out instanceof CompletableFuture<?> cf) {
+                            @SuppressWarnings("unchecked")
+                            CompletableFuture<Object> raw = (CompletableFuture<Object>) cf;
+                            return raw.handle((r, ex) -> ex == null);
+                        }
+                        return CompletableFuture.completedFuture(true);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        try { Bukkit.dispatchCommand(p, "huskhomes:sethome " + homeName); } catch (Throwable ignored) {}
+        return completeAfterTicks(12L);
+    }
+
+    /**
+     * API-first delete home; fallback to command if API method signature differs.
+     */
+    private CompletableFuture<Boolean> doDeleteHomeApiFirst(Player p, String homeName) {
+        try {
+            HuskHomesAPI api = HuskHomesAPI.getInstance();
+            OnlineUser user = api.adaptUser(p);
+
+            for (Method m : api.getClass().getMethods()) {
+                if (!m.getName().equalsIgnoreCase("deleteHome") && !m.getName().equalsIgnoreCase("delHome")) continue;
+                Class<?>[] pt = m.getParameterTypes();
+                if (pt.length == 2 && pt[1] == String.class) {
+                    Object out = m.invoke(api, user, homeName);
+                    if (out instanceof CompletableFuture<?> cf) {
+                        @SuppressWarnings("unchecked")
+                        CompletableFuture<Object> raw = (CompletableFuture<Object>) cf;
+                        return raw.handle((r, ex) -> ex == null);
+                    }
+                    return CompletableFuture.completedFuture(true);
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        try { Bukkit.dispatchCommand(p, "huskhomes:delhome " + homeName); } catch (Throwable ignored) {}
+        return completeAfterTicks(12L);
+    }
+
+    private CompletableFuture<Boolean> completeAfterTicks(long ticks) {
+        CompletableFuture<Boolean> cf = new CompletableFuture<>();
+        Bukkit.getScheduler().runTaskLater(plugin, () -> cf.complete(true), ticks);
+        return cf;
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onDrag(InventoryDragEvent e) {
+        Inventory top = e.getView().getTopInventory();
+        if (top.getHolder() instanceof HomesHolder) e.setCancelled(true);
+    }
+
+    @EventHandler
+    public void onClose(InventoryCloseEvent e) {
+        Inventory top = e.getView().getTopInventory();
+        if (top.getHolder() instanceof HomesHolder holder) {
+            openMenus.remove(holder.owner());
+        }
+        // ensure any in-flight lock clears if they close mid-action
+        if (e.getPlayer() instanceof Player p) {
+            endAction(p.getUniqueId());
+        }
+    }
+
+    private enum HomeSlotKind { TELEPORT, ACTION }
+
+    private static final class HomeSlotRef {
+        final int indexInPage;
+        final HomeSlotKind kind;
+
+        private HomeSlotRef(int indexInPage, HomeSlotKind kind) {
+            this.indexInPage = indexInPage;
+            this.kind = kind;
+        }
+    }
+
+    private HomeSlotRef resolveHomeSlot(Layout l, int clickedSlot, int perPage) {
+        int cols = l.columns;
+        for (int idx = 0; idx < perPage; idx++) {
+            int line = idx / cols;
+            int col = idx % cols;
+
+            int bedSlot = slotForTeleport(l, line, col);
+            if (bedSlot == clickedSlot) return new HomeSlotRef(idx, HomeSlotKind.TELEPORT);
+
+            int actionSlot = slotForAction(l, line, col);
+            if (actionSlot == clickedSlot) return new HomeSlotRef(idx, HomeSlotKind.ACTION);
+        }
+        return null;
+    }
+
+    private Material safeMaterial(Material configured, Material def) {
+        return configured == null ? def : configured;
+    }
+
+    // ------------------------------------------------------------
+    // Mapping + layout helpers
+    // ------------------------------------------------------------
+
     private Map<Integer, String> buildSlotToActualHomeNameMap(List<Home> homes, int maxHomes) {
         Map<Integer, String> out = new HashMap<>();
         if (homes == null || homes.isEmpty()) return out;
@@ -321,7 +580,6 @@ public final class HomesMenu implements Listener {
 
         Set<String> usedNames = new HashSet<>();
 
-        // 1) numeric-ish mapping
         for (String n : names) {
             Integer idx = parseHomeIndex(n);
             if (idx == null) continue;
@@ -330,11 +588,8 @@ public final class HomesMenu implements Listener {
             usedNames.add(n);
         }
 
-        // 2) fill leftovers
         List<String> leftovers = new ArrayList<>();
-        for (String n : names) {
-            if (!usedNames.contains(n)) leftovers.add(n);
-        }
+        for (String n : names) if (!usedNames.contains(n)) leftovers.add(n);
         leftovers.sort(String.CASE_INSENSITIVE_ORDER);
 
         int slot = 1;
@@ -360,10 +615,8 @@ public final class HomesMenu implements Listener {
         }
     }
 
-    // Compute how many "lines" can fit based on start slots and stride/offset
     private int computeLinesThatFit(Layout l) {
         int invRows = l.rows;
-
         int teleportStartRow = l.teleportStartSlot / 9;
         int actionStartRow = l.actionStartSlot / 9;
 
@@ -421,134 +674,6 @@ public final class HomesMenu implements Listener {
 
     private int clamp(int v, int lo, int hi) {
         return Math.max(lo, Math.min(hi, v));
-    }
-
-    // ------------------------------------------------------------
-    // Click handling + refresh after set/delete
-    // ------------------------------------------------------------
-
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onClick(InventoryClickEvent e) {
-        if (!(e.getWhoClicked() instanceof Player p)) return;
-
-        Inventory top = e.getView().getTopInventory();
-        if (!(top.getHolder() instanceof HomesHolder holder)) return;
-
-        e.setCancelled(true);
-
-        int slot = e.getRawSlot();
-        if (slot < 0 || slot >= top.getSize()) return;
-
-        // Navigation clicks
-        if (holder.navEnabled()) {
-            if (slot == clamp(holder.navCloseSlot(), 0, top.getSize() - 1)) {
-                p.closeInventory();
-                return;
-            }
-            if (slot == clamp(holder.navPrevSlot(), 0, top.getSize() - 1) && top.getItem(slot) != null) {
-                open(p, Math.max(0, holder.page() - 1));
-                return;
-            }
-            if (slot == clamp(holder.navNextSlot(), 0, top.getSize() - 1) && top.getItem(slot) != null) {
-                open(p, holder.page() + 1);
-                return;
-            }
-        }
-
-        Layout l = holder.layout();
-
-        HomeSlotRef ref = resolveHomeSlot(l, slot, holder.perPage());
-        if (ref == null) return;
-
-        int homeNumber = holder.page() * holder.perPage() + ref.indexInPage + 1;
-        if (homeNumber < 1 || homeNumber > holder.maxHomes()) return;
-
-        String actualName = holder.slotToActualHomeName().get(homeNumber);
-        boolean exists = (actualName != null && !actualName.isBlank());
-
-        ItemStack clicked = top.getItem(slot);
-        if (clicked == null || clicked.getType() == Material.AIR) return;
-
-        if (ref.kind == HomeSlotKind.TELEPORT) {
-            // Teleport only when home exists AND clicked is the "saved home bed" type
-            Material expectedSavedBed = safeMaterial(config.homesTeleportItem().material(), Material.BLUE_BED);
-            if (!exists) return;
-            if (clicked.getType() != expectedSavedBed) return;
-
-            try { Bukkit.dispatchCommand(p, "huskhomes:home " + actualName); } catch (Throwable ignored) {}
-            p.closeInventory();
-            return;
-        }
-
-        if (ref.kind == HomeSlotKind.ACTION) {
-            Material createMat = safeMaterial(config.homesEmptyActionItem().material(), Material.GRAY_DYE);
-            Material deleteMat = safeMaterial(config.homesDeleteActionItem().material(), Material.LIGHT_BLUE_DYE);
-
-            if (clicked.getType() == createMat) {
-                // IMPORTANT: sethome to the SLOT NUMBER so the menu always has stable slots.
-                try { Bukkit.dispatchCommand(p, "huskhomes:sethome " + homeNumber); } catch (Throwable ignored) {}
-
-                // Refresh AFTER HuskHomes processes the command (1 tick delay)
-                Bukkit.getScheduler().runTaskLater(plugin, () -> open(p, holder.page()), 1L);
-                return;
-            }
-
-            if (clicked.getType() == deleteMat) {
-                if (!exists) return;
-                try { Bukkit.dispatchCommand(p, "huskhomes:delhome " + actualName); } catch (Throwable ignored) {}
-
-                // Refresh AFTER HuskHomes processes the command (1 tick delay)
-                Bukkit.getScheduler().runTaskLater(plugin, () -> open(p, holder.page()), 1L);
-            }
-        }
-    }
-
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
-    public void onDrag(InventoryDragEvent e) {
-        Inventory top = e.getView().getTopInventory();
-        if (top.getHolder() instanceof HomesHolder) {
-            e.setCancelled(true);
-        }
-    }
-
-    @EventHandler
-    public void onClose(InventoryCloseEvent e) {
-        Inventory top = e.getView().getTopInventory();
-        if (top.getHolder() instanceof HomesHolder holder) {
-            openMenus.remove(holder.owner());
-        }
-    }
-
-    private enum HomeSlotKind { TELEPORT, ACTION }
-
-    private static final class HomeSlotRef {
-        final int indexInPage;
-        final HomeSlotKind kind;
-
-        private HomeSlotRef(int indexInPage, HomeSlotKind kind) {
-            this.indexInPage = indexInPage;
-            this.kind = kind;
-        }
-    }
-
-    private HomeSlotRef resolveHomeSlot(Layout l, int clickedSlot, int perPage) {
-        int cols = l.columns;
-
-        for (int idx = 0; idx < perPage; idx++) {
-            int line = idx / cols;
-            int col = idx % cols;
-
-            int bedSlot = slotForTeleport(l, line, col);
-            if (bedSlot == clickedSlot) return new HomeSlotRef(idx, HomeSlotKind.TELEPORT);
-
-            int actionSlot = slotForAction(l, line, col);
-            if (actionSlot == clickedSlot) return new HomeSlotRef(idx, HomeSlotKind.ACTION);
-        }
-        return null;
-    }
-
-    private Material safeMaterial(Material configured, Material def) {
-        return configured == null ? def : configured;
     }
 
     // ------------------------------------------------------------

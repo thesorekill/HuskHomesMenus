@@ -24,7 +24,6 @@ import org.bukkit.plugin.java.JavaPlugin;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.*;
-import java.util.stream.Collectors;
 
 /**
  * Lightweight config wrapper for HuskHomesMenus.
@@ -136,7 +135,7 @@ public final class HHMConfig {
     public MenuItemTemplate homesFillerItem() {
         return MenuItemTemplate.fromSection(
                 plugin.getConfig().getConfigurationSection("menus.homes.filler"),
-                new MenuItemTemplate(Material.GRAY_STAINED_GLASS_PANE, " ", List.of(), false, 0)
+                new MenuItemTemplate(Material.GRAY_STAINED_GLASS_PANE, " ", Collections.emptyList(), false, 0)
         );
     }
 
@@ -165,32 +164,32 @@ public final class HHMConfig {
     }
 
     // Home item templates
+
+    /** Bed shown when a home EXISTS (click to teleport). */
     public MenuItemTemplate homesTeleportItem() {
         return MenuItemTemplate.fromSection(
                 plugin.getConfig().getConfigurationSection("menus.homes.home_items.teleport"),
-                // default is the "SAVED" bed (blue) — empty bed is separate and configurable below
                 new MenuItemTemplate(Material.BLUE_BED, "&f%home_name%", List.of("&7Click to teleport"), false, 0)
         );
     }
 
-    /**
-     * Bed shown when a home does NOT exist (above the empty_action item).
-     */
+    /** Bed shown when a home does NOT exist (above the empty_action item). */
     public MenuItemTemplate homesEmptyBedItem() {
         return MenuItemTemplate.fromSection(
                 plugin.getConfig().getConfigurationSection("menus.homes.home_items.empty_bed"),
-                new MenuItemTemplate(Material.WHITE_BED, " ", List.of(), false, 0)
+                new MenuItemTemplate(Material.WHITE_BED, " ", Collections.emptyList(), false, 0)
         );
     }
 
+    /** Action shown when NO home exists (save location). */
     public MenuItemTemplate homesEmptyActionItem() {
         return MenuItemTemplate.fromSection(
                 plugin.getConfig().getConfigurationSection("menus.homes.home_items.empty_action"),
-                // default changed to GRAY_DYE as requested
                 new MenuItemTemplate(Material.GRAY_DYE, "&fNO HOME SET", List.of("&7- Click to save your location"), false, 0)
         );
     }
 
+    /** Action shown when home exists (delete). */
     public MenuItemTemplate homesDeleteActionItem() {
         return MenuItemTemplate.fromSection(
                 plugin.getConfig().getConfigurationSection("menus.homes.home_items.delete_action"),
@@ -239,25 +238,34 @@ public final class HHMConfig {
     /**
      * Build an ItemStack from a template + placeholders.
      * Placeholders are applied to name and lore.
+     *
+     * NOTE: Uses simple loops (no streams) to avoid compiler generic inference issues.
      */
     public ItemStack buildItem(MenuItemTemplate t, Map<String, String> placeholders) {
         if (t == null) return null;
 
-        Material mat = t.material() == null ? Material.STONE : t.material();
-        ItemStack item = new ItemStack(mat);
-        ItemMeta meta = item.getItemMeta();
+        final Material mat = (t.material() == null) ? Material.STONE : t.material();
+        final ItemStack item = new ItemStack(mat);
+
+        final ItemMeta meta = item.getItemMeta();
         if (meta == null) return item;
 
-        String name = applyPlaceholders(t.name(), placeholders);
-        List<String> lore = t.lore() == null ? List.of() : t.lore().stream()
-                .map(line -> applyPlaceholders(line, placeholders))
-                .collect(Collectors.toList());
+        final String name = applyPlaceholders(t.name(), placeholders);
+
+        final List<String> rawLore = (t.lore() == null) ? Collections.emptyList() : t.lore();
+        final List<Component> loreComponents = new ArrayList<>(rawLore.size());
+        for (String line : rawLore) {
+            String applied = applyPlaceholders(line, placeholders);
+            if (applied != null && !applied.isBlank()) {
+                loreComponents.add(AMP.deserialize(applied));
+            }
+        }
 
         if (name != null && !name.isBlank()) {
             meta.displayName(AMP.deserialize(name));
         }
-        if (!lore.isEmpty()) {
-            meta.lore(lore.stream().map(AMP::deserialize).collect(Collectors.toList()));
+        if (!loreComponents.isEmpty()) {
+            meta.lore(loreComponents);
         }
 
         if (t.customModelData() > 0) {
@@ -265,11 +273,9 @@ public final class HHMConfig {
         }
 
         if (t.glow()) {
-            // Apply glow without any compile-time deprecated API usage
             applyGlow(meta);
         }
 
-        // Hide extra noise (optional)
         try { meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES); } catch (Throwable ignored) {}
 
         item.setItemMeta(meta);
@@ -287,8 +293,7 @@ public final class HHMConfig {
     }
 
     /**
-     * Resolve an enchantment for glow WITHOUT referencing any deprecated methods/fields at compile time.
-     * This avoids warnings while still working across versions.
+     * Resolve an enchantment for glow WITHOUT referencing deprecated methods/fields at compile time.
      */
     private Enchantment resolveGlowEnchantNoDeprecation() {
         // 1) Try constant field UNBREAKING (reflection avoids compile-time dependency)
@@ -318,17 +323,19 @@ public final class HHMConfig {
     private String applyPlaceholders(String s, Map<String, String> ph) {
         if (s == null) return "";
         String out = s;
-        if (ph != null) {
-            for (var e : ph.entrySet()) {
-                if (e.getKey() == null) continue;
-                out = out.replace(e.getKey(), e.getValue() == null ? "" : e.getValue());
+        if (ph != null && !ph.isEmpty()) {
+            for (Map.Entry<String, String> e : ph.entrySet()) {
+                String k = e.getKey();
+                if (k == null) continue;
+                String v = e.getValue();
+                out = out.replace(k, v == null ? "" : v);
             }
         }
         return out;
     }
 
     // ---------------------------------------------------------------------
-    // Template record
+    // Template
     // ---------------------------------------------------------------------
 
     public static final class MenuItemTemplate {
@@ -341,7 +348,7 @@ public final class HHMConfig {
         public MenuItemTemplate(Material material, String name, List<String> lore, boolean glow, int customModelData) {
             this.material = material;
             this.name = name == null ? "" : name;
-            this.lore = lore == null ? List.of() : List.copyOf(lore);
+            this.lore = lore == null ? Collections.emptyList() : Collections.unmodifiableList(new ArrayList<>(lore));
             this.glow = glow;
             this.customModelData = customModelData;
         }
