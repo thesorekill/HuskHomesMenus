@@ -21,9 +21,11 @@ Whether you run a single survival server or a multi-server proxy network, HuskHo
 - ⭐ **Lightweight & focused** — No bloated features — HuskHomesMenus does one thing well and stays out of the way.
 
 TP Menu:
+
 ![](image.png)
 
 Home Menu:
+
 ![](image-1.png)
 
 ## Requirements
