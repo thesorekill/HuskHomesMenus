@@ -17,6 +17,7 @@ net\chumbucket\huskhomesmenus\OptionalProxyMessenger$SkinResponse.class
 net\chumbucket\huskhomesmenus\OptionalProxyMessenger.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$Session.class
 net\chumbucket\huskhomesmenus\HomesCommand.class
+net\chumbucket\huskhomesmenus\HomesMenu$SignSession.class
 net\chumbucket\huskhomesmenus\HomesMenu$HomesHolder.class
 net\chumbucket\huskhomesmenus\HomesMenu$Layout.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$RequestType.class

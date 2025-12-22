@@ -17,16 +17,22 @@ import net.william278.huskhomes.api.HuskHomesAPI;
 import net.william278.huskhomes.position.Home;
 import net.william278.huskhomes.user.OnlineUser;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.block.Block;
+import org.bukkit.block.data.BlockData;
+import org.bukkit.block.Sign;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.SignChangeEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryCloseEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
@@ -58,6 +64,29 @@ public final class HomesMenu implements Listener {
     private final Map<UUID, Long> lastActionMs = new ConcurrentHashMap<>();
     private final long clickCooldownMs = 250L; // small debounce
 
+    // ---------------------------------------------------------------------
+    // ✅ Sign input sessions (for naming a home)
+    // ---------------------------------------------------------------------
+    private final Map<UUID, SignSession> signSessions = new ConcurrentHashMap<>();
+
+    private static final class SignSession {
+        final int returnPage;
+        final int homeNumber;
+
+        final Location signLoc;
+        final Material originalType;
+        final BlockData originalData;
+
+        SignSession(int returnPage, int homeNumber,
+                    Location signLoc, Material originalType, BlockData originalData) {
+            this.returnPage = returnPage;
+            this.homeNumber = homeNumber;
+            this.signLoc = signLoc;
+            this.originalType = originalType;
+            this.originalData = originalData;
+        }
+    }
+
     public HomesMenu(JavaPlugin plugin, HHMConfig config) {
         this.plugin = plugin;
         this.config = config;
@@ -68,7 +97,7 @@ public final class HomesMenu implements Listener {
     }
 
     // ---------------------------------------------------------------------
-    // ✅ NO-ITALICS FIX (real fix): force ITALIC=false on name + lore components
+    // ✅ NO-ITALICS FIX: force ITALIC=false on name + lore components
     // ---------------------------------------------------------------------
     private Component deitalicize(Component c) {
         if (c == null) return Component.empty();
@@ -439,18 +468,398 @@ public final class HomesMenu implements Listener {
     }
 
     // ---------------------------------------------------------------------
-    // ✅ NEW: HuskHomes Home -> (world/server/dimension/coords) placeholder helpers
+    // ✅ Configurable create-home sign prompt (menus.homes.create_home_sign)
+    // ---------------------------------------------------------------------
+
+    private boolean createHomeSignEnabled() {
+        return plugin.getConfig().getBoolean("menus.homes.create_home_sign.enabled", true);
+    }
+
+    private Material readCreateHomeSignMaterial() {
+        String matName = plugin.getConfig().getString("menus.homes.create_home_sign.material", "OAK_SIGN");
+        if (matName == null) return Material.OAK_SIGN;
+
+        Material m = Material.matchMaterial(matName.trim());
+        if (m == null) return Material.OAK_SIGN;
+
+        // Ensure it's a sign item/block type
+        if (!m.name().endsWith("_SIGN")) return Material.OAK_SIGN;
+
+        return m;
+    }
+
+    private String[] readCreateHomeSignLines(Player p, int returnPage, int homeNumber) {
+        List<String> cfg = plugin.getConfig().getStringList("menus.homes.create_home_sign.lines");
+
+        String l1 = cfg.size() > 0 ? cfg.get(0) : "&7^^^^^^^^^^^^^^^";
+        String l2 = cfg.size() > 1 ? cfg.get(1) : "&bName your home";
+        String l3 = cfg.size() > 2 ? cfg.get(2) : "";
+        String l4 = cfg.size() > 3 ? cfg.get(3) : "";
+
+        Map<String, String> ph = new HashMap<>();
+        ph.put("%home%", String.valueOf(homeNumber));
+        ph.put("%player%", (p == null ? "" : p.getName()));
+        ph.put("%page%", String.valueOf(Math.max(1, returnPage + 1)));
+
+        l1 = applyPlaceholders(l1, ph);
+        l2 = applyPlaceholders(l2, ph);
+        l3 = applyPlaceholders(l3, ph);
+        l4 = applyPlaceholders(l4, ph);
+
+        return new String[]{l1, l2, l3, l4};
+    }
+
+    private String applyPlaceholders(String s, Map<String, String> ph) {
+        if (s == null) return "";
+        String out = s;
+        if (ph != null) {
+            for (var e : ph.entrySet()) {
+                if (e.getKey() == null) continue;
+                out = out.replace(e.getKey(), e.getValue() == null ? "" : e.getValue());
+            }
+        }
+        return out;
+    }
+
+    // ---------------------------------------------------------------------
+    // ✅ Sign UI: open editor + capture name
+    // ---------------------------------------------------------------------
+
+    private void openHomeNameSign(Player p, int returnPage, int homeNumber) {
+        if (p == null || !p.isOnline()) return;
+
+        // If disabled in config, fallback to numeric name
+        if (!createHomeSignEnabled()) {
+            doSetHomeApiFirst(p, String.valueOf(homeNumber)).whenComplete((ok, err) ->
+                    Bukkit.getScheduler().runTask(plugin, () -> open(p, Math.max(0, returnPage)))
+            );
+            return;
+        }
+
+        // Find an air block near the player (a couple blocks above head)
+        Location base = p.getLocation().clone();
+        Location spot = findSignSpot(base);
+
+        if (spot == null) {
+            p.sendMessage(AMP.deserialize(config.prefix()).append(AMP.deserialize("&cCouldn't open name prompt here.")));
+            return;
+        }
+
+        Block b = spot.getBlock();
+        Material oldType = b.getType();
+        BlockData oldData = b.getBlockData();
+
+        // Place a temporary sign (configurable type)
+        Material signMat = readCreateHomeSignMaterial();
+        try {
+            b.setType(signMat, false);
+        } catch (Throwable t) {
+            p.sendMessage(AMP.deserialize(config.prefix()).append(AMP.deserialize("&cCouldn't place sign.")));
+            return;
+        }
+
+        // Prepare sign text (from config)
+        final String[] lines = readCreateHomeSignLines(p, returnPage, homeNumber);
+
+        try {
+            if (b.getState() instanceof Sign sign) {
+                setSignLinesBestEffort(sign, lines[0], lines[1], lines[2], lines[3]);
+
+                // ✅ push to world/client so editor doesn't open blank
+                try { sign.update(true, false); } catch (Throwable ignored) {}
+
+                // ✅ additionally push preview straight to THIS player (fixes blank editor race)
+                sendSignPreviewToPlayerBestEffort(p, sign.getLocation(), lines);
+            }
+        } catch (Throwable ignored) {}
+
+        // Store session (overwrites any previous)
+        SignSession session = new SignSession(
+                Math.max(0, returnPage),
+                homeNumber,
+                spot.clone(),
+                oldType,
+                oldData
+        );
+        signSessions.put(p.getUniqueId(), session);
+
+        // Timeout cleanup (if player ESC's the sign editor, no event fires)
+        Bukkit.getScheduler().runTaskLater(plugin, () -> cleanupSignSession(p.getUniqueId(), true), 20L * 60L); // 60s
+
+        // ✅ open editor after tiny delay so client has sign text
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            if (!p.isOnline()) return;
+
+            Block sb = session.signLoc.getBlock();
+            if (!(sb.getState() instanceof Sign sign)) {
+                cleanupSignSession(p.getUniqueId(), true);
+                return;
+            }
+
+            // one last push for safety
+            sendSignPreviewToPlayerBestEffort(p, sign.getLocation(), lines);
+
+            openSignEditorBestEffort(p, sign);
+        }, 2L);
+    }
+
+    private Location findSignSpot(Location playerLoc) {
+        if (playerLoc == null || playerLoc.getWorld() == null) return null;
+
+        // try y+2..y+5 above player, same x/z
+        for (int dy = 2; dy <= 5; dy++) {
+            Location loc = playerLoc.clone().add(0, dy, 0);
+            Block b = loc.getBlock();
+            if (b.getType().isAir()) return b.getLocation();
+        }
+
+        // try a small ring around (in case above is blocked)
+        for (int dy = 2; dy <= 5; dy++) {
+            for (int dx = -2; dx <= 2; dx++) {
+                for (int dz = -2; dz <= 2; dz++) {
+                    Location loc = playerLoc.clone().add(dx, dy, dz);
+                    Block b = loc.getBlock();
+                    if (b.getType().isAir()) return b.getLocation();
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private void cleanupSignSession(UUID playerId, boolean restoreBlock) {
+        if (playerId == null) return;
+        SignSession session = signSessions.remove(playerId);
+        if (session == null) return;
+
+        if (restoreBlock) {
+            try {
+                Block b = session.signLoc.getBlock();
+                b.setType(session.originalType, false);
+                try {
+                    if (session.originalData != null) {
+                        b.setBlockData(session.originalData, false);
+                    }
+                } catch (Throwable ignored) {}
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    // ✅ Writes to FRONT (mirrors BACK when possible) without unchecked Enum warnings
+    private void setSignLinesBestEffort(Sign sign, String l1, String l2, String l3, String l4) {
+        if (sign == null) return;
+
+        String[] raw = new String[]{
+                l1 == null ? "" : l1,
+                l2 == null ? "" : l2,
+                l3 == null ? "" : l3,
+                l4 == null ? "" : l4
+        };
+
+        // --- Modern (1.20+): set FRONT (and BACK) sign sides explicitly ---
+        try {
+            Class<?> sideClass = Class.forName("org.bukkit.block.sign.Side");
+
+            Object front = null;
+            Object back = null;
+
+            Object[] constants = sideClass.getEnumConstants();
+            if (constants != null) {
+                for (Object c : constants) {
+                    if (c instanceof Enum<?> en) {
+                        String n = en.name();
+                        if ("FRONT".equals(n)) front = c;
+                        else if ("BACK".equals(n)) back = c;
+                    }
+                }
+            }
+            if (front == null) throw new IllegalStateException("Side.FRONT not found");
+
+            Method getSide = sign.getClass().getMethod("getSide", sideClass);
+            Object frontSide = getSide.invoke(sign, front);
+            Object backSide = (back != null) ? getSide.invoke(sign, back) : null;
+
+            Method lineMethod = frontSide.getClass().getMethod("line", int.class, Component.class);
+
+            for (int i = 0; i < 4; i++) {
+                // NOTE: sign editor does not render colors in the same way; keep it clean
+                String plain = stripLegacyColor(raw[i]);
+                Component c = AMP.deserialize(plain).decoration(TextDecoration.ITALIC, false);
+
+                lineMethod.invoke(frontSide, i, c);
+                if (backSide != null) {
+                    try { lineMethod.invoke(backSide, i, c); } catch (Throwable ignored) {}
+                }
+            }
+            return;
+
+        } catch (Throwable ignored) {
+            // fall back below
+        }
+
+        // --- Older Bukkit: setLine(int, String) ---
+        try {
+            Method setLine = sign.getClass().getMethod("setLine", int.class, String.class);
+            setLine.invoke(sign, 0, stripLegacyColor(raw[0]));
+            setLine.invoke(sign, 1, stripLegacyColor(raw[1]));
+            setLine.invoke(sign, 2, stripLegacyColor(raw[2]));
+            setLine.invoke(sign, 3, stripLegacyColor(raw[3]));
+        } catch (Throwable ignored) {}
+    }
+
+    // ✅ Sends sign text directly to the player (best-effort) to prevent blank editor
+    private void sendSignPreviewToPlayerBestEffort(Player p, Location signLoc, String[] lines) {
+        if (p == null || signLoc == null || lines == null || lines.length < 4) return;
+
+        try {
+            // Prefer Paper/Spigot API: Player#sendSignChange(Location, String[])
+            Method m = p.getClass().getMethod("sendSignChange", Location.class, String[].class);
+            String[] plain = new String[] {
+                    stripLegacyColor(lines[0]),
+                    stripLegacyColor(lines[1]),
+                    stripLegacyColor(lines[2]),
+                    stripLegacyColor(lines[3])
+            };
+            m.invoke(p, signLoc, (Object) plain);
+            return;
+        } catch (Throwable ignored) {}
+
+        try {
+            // Some newer APIs: sendSignChange(Location, Component[])
+            Method m = p.getClass().getMethod("sendSignChange", Location.class, Component[].class);
+            Component[] comps = new Component[] {
+                    AMP.deserialize(stripLegacyColor(lines[0])).decoration(TextDecoration.ITALIC, false),
+                    AMP.deserialize(stripLegacyColor(lines[1])).decoration(TextDecoration.ITALIC, false),
+                    AMP.deserialize(stripLegacyColor(lines[2])).decoration(TextDecoration.ITALIC, false),
+                    AMP.deserialize(stripLegacyColor(lines[3])).decoration(TextDecoration.ITALIC, false),
+            };
+            m.invoke(p, signLoc, (Object) comps);
+        } catch (Throwable ignored) {}
+    }
+
+    private void openSignEditorBestEffort(Player p, Sign sign) {
+        try {
+            Method m = p.getClass().getMethod("openSign", Sign.class);
+            m.invoke(p, sign);
+            return;
+        } catch (Throwable ignored) {}
+
+        try {
+            Method m = p.getClass().getMethod("openSign", Sign.class, boolean.class);
+            m.invoke(p, sign, true);
+        } catch (Throwable ignored) {}
+    }
+
+    private String stripLegacyColor(String s) {
+        if (s == null) return "";
+        return s.replaceAll("(?i)§[0-9A-FK-OR]", "").replaceAll("(?i)&[0-9A-FK-OR]", "");
+    }
+
+    private String sanitizeHomeName(String raw, int fallbackHomeNumber) {
+        String s = raw == null ? "" : raw.trim();
+
+        // remove color codes (both & and §)
+        s = stripLegacyColor(s).trim();
+
+        // Convert spaces -> underscore
+        s = s.replaceAll("\\s+", "_").trim();
+
+        // Only keep safe characters
+        s = s.replaceAll("[^A-Za-z0-9_\\-]", "");
+
+        // Limit length
+        if (s.length() > 32) s = s.substring(0, 32);
+
+        if (s.isBlank()) s = String.valueOf(fallbackHomeNumber);
+        return s;
+    }
+
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    public void onSignChange(SignChangeEvent e) {
+        Player p = e.getPlayer();
+        if (p == null) return;
+
+        SignSession session = signSessions.get(p.getUniqueId());
+        if (session == null) return;
+
+        // Make sure it's OUR temporary sign
+        try {
+            Location loc = e.getBlock().getLocation();
+            if (loc.getWorld() == null || session.signLoc.getWorld() == null) return;
+            if (!loc.getWorld().equals(session.signLoc.getWorld())) return;
+            if (loc.getBlockX() != session.signLoc.getBlockX()
+                    || loc.getBlockY() != session.signLoc.getBlockY()
+                    || loc.getBlockZ() != session.signLoc.getBlockZ()) return;
+        } catch (Throwable t) {
+            return;
+        }
+
+        // Your config has players typing on line 0 (top line).
+        // ✅ If line 0 is blank -> default to numeric home name (same behavior as disabled).
+        String rawLine0 = safeSignLine(e, 0);
+        String typed = sanitizeHomeName(rawLine0, session.homeNumber);
+
+        final String homeName;
+        if (typed == null || typed.isBlank() || typed.equals(String.valueOf(session.homeNumber))) {
+            // Important: treat blank (or effectively blank) as "use number"
+            // If the player typed nothing (or only junk stripped by sanitize), name = home number
+            if (rawLine0 == null || rawLine0.trim().isEmpty() || stripLegacyColor(rawLine0).trim().isEmpty()) {
+                homeName = String.valueOf(session.homeNumber);
+            } else {
+                // They typed something but it sanitized down to the fallback number; keep it
+                homeName = typed;
+            }
+        } else {
+            homeName = typed;
+        }
+
+        int returnPage = session.returnPage;
+
+        // Restore the block immediately
+        cleanupSignSession(p.getUniqueId(), true);
+
+        // Perform sethome, then reopen menu
+        doSetHomeApiFirst(p, homeName).whenComplete((ok, err) ->
+                Bukkit.getScheduler().runTask(plugin, () -> open(p, returnPage))
+        );
+    }
+
+    private String safeSignLine(SignChangeEvent e, int idx) {
+        try {
+            Method m = e.getClass().getMethod("line", int.class);
+            Object out = m.invoke(e, idx);
+            if (out instanceof Component c) {
+                return AMP.serialize(c);
+            }
+        } catch (Throwable ignored) {}
+
+        try {
+            Method m2 = e.getClass().getMethod("getLine", int.class);
+            Object out2 = m2.invoke(e, idx);
+            if (out2 instanceof String s) return s;
+        } catch (Throwable ignored) {}
+
+        return "";
+    }
+
+    @EventHandler
+    public void onQuit(PlayerQuitEvent e) {
+        if (e == null || e.getPlayer() == null) return;
+        cleanupSignSession(e.getPlayer().getUniqueId(), true);
+        endAction(e.getPlayer().getUniqueId());
+    }
+
+    // ---------------------------------------------------------------------
+    // ✅ HuskHomes Home -> (world/server/dimension/coords) placeholder helpers
     // ---------------------------------------------------------------------
 
     private String resolveHomeWorldName(Home h) {
         if (h == null) return "";
 
-        // Many HuskHomes versions: Home extends Position and has getWorld()
         Object worldObj = callNoArg(h, "getWorld");
         if (worldObj == null) worldObj = callNoArg(h, "world");
         if (worldObj == null) return "";
 
-        // HuskHomes World object often has getName()/name()
         Object name = callNoArg(worldObj, "getName");
         if (name == null) name = callNoArg(worldObj, "name");
         if (name instanceof String s) return s;
@@ -471,7 +880,6 @@ public final class HomesMenu implements Listener {
     }
 
     private String resolveHomeDimensionBestEffort(String worldName, String homeServerShown) {
-        // If proxy disabled OR home server is this backend OR server unknown -> try to resolve Bukkit world
         boolean localish = !config.proxyEnabled()
                 || homeServerShown == null
                 || homeServerShown.isBlank()
@@ -493,23 +901,19 @@ public final class HomesMenu implements Listener {
             } catch (Throwable ignored) {}
         }
 
-        // Remote / unknown: best-effort guess by common naming
         String lower = wn.toLowerCase(Locale.ROOT);
         if (lower.contains("nether")) return "Nether";
         if (lower.contains("the_end") || lower.endsWith("_end") || lower.contains(" end")) return "The End";
-        if (!wn.isBlank()) return "Overworld"; // common default if you keep standard naming
+        if (!wn.isBlank()) return "Overworld";
 
         return "";
     }
 
-    // ✅ Coords helper (works across HuskHomes versions)
     private String resolveHomeCoordInt(Home h, String getterName) {
         if (h == null || getterName == null) return "";
 
-        // Try directly on Home (getX/getY/getZ)
         Object v = callNoArg(h, getterName);
 
-        // Try nested position (getPosition()/position())
         if (v == null) {
             Object pos = callNoArg(h, "getPosition");
             if (pos == null) pos = callNoArg(h, "position");
@@ -724,14 +1128,16 @@ public final class HomesMenu implements Listener {
             } catch (Throwable ignored) {}
 
             if (clicked.getType() == createMat) {
-                String newHomeName = String.valueOf(homeNumber);
+                int returnPage = holder.page();
+                p.closeInventory();
 
-                doSetHomeApiFirst(p, newHomeName).whenComplete((ok, err) ->
-                        Bukkit.getScheduler().runTask(plugin, () -> {
-                            try { refreshIfStillOpen(p); }
-                            finally { endAction(p.getUniqueId()); }
-                        })
-                );
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    try {
+                        openHomeNameSign(p, returnPage, homeNumber);
+                    } finally {
+                        endAction(p.getUniqueId());
+                    }
+                });
                 return;
             }
 
