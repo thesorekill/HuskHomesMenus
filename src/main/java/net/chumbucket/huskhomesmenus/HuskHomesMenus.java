@@ -12,11 +12,11 @@ package net.chumbucket.huskhomesmenus;
 
 import org.bukkit.Bukkit;
 import org.bukkit.command.PluginCommand;
-import org.bukkit.event.HandlerList;
-import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.entity.Player;
+import org.bukkit.event.HandlerList;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
+import org.bukkit.plugin.java.JavaPlugin;
 
 public final class HuskHomesMenus extends JavaPlugin {
 
@@ -27,6 +27,10 @@ public final class HuskHomesMenus extends JavaPlugin {
     private ProxyPlayerCache playerCache;
     private ConfirmRequestMenu confirmMenu;
     private HomesMenu homesMenu;
+
+    // ✅ Update checker
+    private UpdateChecker updateChecker;
+    private UpdateNotifyOnJoinListener updateNotifyOnJoinListener;
 
     // Keep references so we can unregister cleanly on reload
     private TeleportCommandInterceptListener interceptListener;
@@ -71,6 +75,13 @@ public final class HuskHomesMenus extends JavaPlugin {
             t.printStackTrace();
             return false;
         }
+    }
+
+    // ------------------------------------------------------------
+    // ✅ Update checker access
+    // ------------------------------------------------------------
+    public UpdateChecker getUpdateChecker() {
+        return updateChecker;
     }
 
     // ------------------------------------------------------------
@@ -145,9 +156,38 @@ public final class HuskHomesMenus extends JavaPlugin {
         this.homesInterceptListener = new HomesCommandInterceptListener(homesMenu, toggleManager);
         Bukkit.getPluginManager().registerEvents(homesInterceptListener, this);
 
-
         this.toggleListener = new TeleportRequestToggleListener(this, toggleManager, messenger, config);
         Bukkit.getPluginManager().registerEvents(toggleListener, this);
+
+        // ✅ Update Checker init + listeners (no impact on existing logic)
+        try {
+            if (getConfig().getBoolean("update_checker.enabled", true)) {
+                this.updateChecker = new UpdateChecker(this, 130925);
+
+                // Console notify (if enabled)
+                if (getConfig().getBoolean("update_checker.notify_console", true)) {
+                    this.updateChecker.checkNowAsync().thenAccept(result -> {
+                        if (result == null) return;
+                        if (result.status() == UpdateChecker.Status.OUTDATED) {
+                            final String spigotUrl = "https://www.spigotmc.org/resources/huskhomesmenus-1-21-x.130925/";
+                            getLogger().warning("A new version of HuskHomesMenus is available! "
+                                    + "Current: " + result.currentVersion()
+                                    + " Latest: " + result.latestVersion()
+                                    + " (" + spigotUrl + ")");
+                        }
+                    });
+                }
+
+                // Join notify (if enabled)
+                if (getConfig().getBoolean("update_checker.notify_on_join", true)) {
+                    this.updateNotifyOnJoinListener = new UpdateNotifyOnJoinListener(this);
+                    Bukkit.getPluginManager().registerEvents(updateNotifyOnJoinListener, this);
+                }
+            }
+        } catch (Throwable t) {
+            // Never break plugin boot if update check fails
+            getLogger().warning("Update checker failed to initialize: " + t.getClass().getSimpleName() + ": " + t.getMessage());
+        }
 
         // Commands
         safeSetExecutor("tpa", new TpaCommand(toggleManager, config));
@@ -180,8 +220,6 @@ public final class HuskHomesMenus extends JavaPlugin {
         // (PlaceholderExpansion.persist() keeps it loaded across plugin reloads.)
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             try {
-                // If it's already registered, PlaceholderAPI ignores or throws depending on version.
-                // This guard avoids log spam/double-register attempts.
                 new Placeholders(this, toggleManager, config).register();
                 getLogger().info("PlaceholderAPI detected; placeholders registered.");
             } catch (Throwable ignored) {
@@ -217,6 +255,11 @@ public final class HuskHomesMenus extends JavaPlugin {
             if (homesInterceptListener != null) HandlerList.unregisterAll(homesInterceptListener);
         } catch (Throwable ignored) { }
 
+        // ✅ update checker join listener unregister
+        try {
+            if (updateNotifyOnJoinListener != null) HandlerList.unregisterAll(updateNotifyOnJoinListener);
+        } catch (Throwable ignored) { }
+
         closeOpenConfirmMenus();
         closeOpenHomesMenus();
 
@@ -240,6 +283,10 @@ public final class HuskHomesMenus extends JavaPlugin {
         this.config = null;
         this.homesMenu = null;
         this.homesInterceptListener = null;
+
+        // ✅ update checker refs
+        this.updateChecker = null;
+        this.updateNotifyOnJoinListener = null;
     }
 
     // ------------------------------------------------------------
