@@ -3,7 +3,7 @@
 # ┃               Copyright © 2025 Sorekill               ┃
 # ┃    Licensed under the Apache License, Version 2.0.    ┃
 # ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-# ┣╸ Version: 1.1.1
+# ┣╸ Version: 1.1.2
 # ┣╸ Purpose: GUI + toggles + proxy-safe messaging for HuskHomes TPA/TPAHERE
 # ┗╸ Notes: Designed for proxy networks (Velocity/Bungee/Waterfall)
 
@@ -21,7 +21,7 @@
 #   huskhomesmenus.tpmenu        -> /tpmenu
 #   huskhomesmenus.tpauto        -> /tpauto
 #   huskhomesmenus.home          -> /home and /homes
-#   huskhomesmenus.homemenu        -> /homemenu
+#   huskhomesmenus.homemenu      -> /homemenu
 
 # ┌──────────────────────────────────────────────────────────────┐
 # │  PLACEHOLDERS (If you have PlaceholderAPI Installed)         │
@@ -307,3 +307,95 @@ menus:
       click:
         sound: UI_BUTTON_CLICK
         close_menu: true
+
+  ##Homes Menu
+  homes:
+    enabled: true
+    title: "&7HOMES"
+    rows: 4
+
+    use_filler: false
+    filler:
+      material: GRAY_STAINED_GLASS_PANE
+      name: " "
+      lore: []
+      glow: false
+      custom_model_data: 0
+
+    layout:
+      columns: 7
+      teleport_row_start_slot: 10
+      action_row_start_slot: 19
+      action_row_offset_rows: 1
+      line_stride_rows: 2
+
+    home_items:
+      teleport:
+        material: BLUE_BED
+        name: "&f%home_name%"
+        lore:
+          - "&7Click to teleport"
+        glow: false
+        custom_model_data: 0
+
+      empty_bed:
+        material: WHITE_BED
+        name: " "
+        lore: []
+        glow: false
+        custom_model_data: 0
+
+      empty_action:
+        material: GRAY_DYE
+        name: "&fNO HOME SET"
+        lore:
+          - "&7- Click to save your location"
+        glow: false
+        custom_model_data: 0
+
+      delete_action:
+        material: LIGHT_BLUE_DYE
+        name: "&b%home_name%"
+        lore:
+          - "&fClick to delete %home_name%"
+        glow: false
+        custom_model_data: 0
+
+    navigation:
+      enabled: true
+      prev_slot: 29
+      page_slot: 31
+      next_slot: 33
+      close_slot: 35
+
+      prev_item:
+        material: ARROW
+        name: "&ePrevious"
+        lore:
+          - "&7Go to page %prev_page%"
+        glow: false
+        custom_model_data: 0
+
+      page_item:
+        material: PAPER
+        name: "&fPage &a%page%&f/&a%pages%"
+        lore:
+          - "&7Max homes: &f%max_homes%"
+        glow: false
+        custom_model_data: 0
+
+      next_item:
+        material: ARROW
+        name: "&eNext"
+        lore:
+          - "&7Go to page %next_page%"
+        glow: false
+        custom_model_data: 0
+
+      close_item:
+        material: BARRIER
+        name: "&cClose"
+        lore:
+          - "&7Close this menu"
+        glow: false
+        custom_model_data: 0

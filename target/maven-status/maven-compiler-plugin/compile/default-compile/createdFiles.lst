@@ -6,6 +6,7 @@ net\chumbucket\huskhomesmenus\ConfirmRequestMenu$1.class
 net\chumbucket\huskhomesmenus\TeleportCommandInterceptListener.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$4.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$ConfirmHolder.class
+net\chumbucket\huskhomesmenus\HomesMenu$HomeSlotKind.class
 net\chumbucket\huskhomesmenus\HuskHomesMenus.class
 net\chumbucket\huskhomesmenus\ProxyPlayerCache$1.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$3.class
@@ -14,10 +15,13 @@ net\chumbucket\huskhomesmenus\OptionalProxyMessenger.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$Session.class
 net\chumbucket\huskhomesmenus\HomesCommand.class
 net\chumbucket\huskhomesmenus\HomesMenu$HomesHolder.class
+net\chumbucket\huskhomesmenus\HomesMenu$Layout.class
 net\chumbucket\huskhomesmenus\ConfirmRequestMenu$RequestType.class
 net\chumbucket\huskhomesmenus\TpDenyCommand.class
 net\chumbucket\huskhomesmenus\TpAcceptCommand.class
+net\chumbucket\huskhomesmenus\HomesMenu$HomeSlotRef.class
 net\chumbucket\huskhomesmenus\PendingRequests$Skin.class
+net\chumbucket\huskhomesmenus\HHMConfig$MenuItemTemplate.class
 net\chumbucket\huskhomesmenus\PendingRequests.class
 net\chumbucket\huskhomesmenus\Placeholders.class
 net\chumbucket\huskhomesmenus\TpaCommand.class
