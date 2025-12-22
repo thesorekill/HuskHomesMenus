@@ -172,6 +172,9 @@ public final class HuskHomesMenus extends JavaPlugin {
         safeSetTabCompleter("tpahere", new ProxyTabCompleter(playerCache, true));
         safeSetTabCompleter("tpaccept", new ProxyTabCompleter(playerCache, false));
         safeSetTabCompleter("tpdeny", new ProxyTabCompleter(playerCache, false));
+        HomesTabCompleter homesTab = new HomesTabCompleter(this, config, toggleManager);
+        safeSetTabCompleter("home", homesTab);
+        safeSetTabCompleter("homes", homesTab);
 
         // PlaceholderAPI: only register once per server run to avoid duplicates
         // (PlaceholderExpansion.persist() keeps it loaded across plugin reloads.)

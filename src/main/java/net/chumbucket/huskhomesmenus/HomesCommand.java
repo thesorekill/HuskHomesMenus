@@ -10,11 +10,12 @@
 
 package net.chumbucket.huskhomesmenus;
 
-import org.bukkit.Bukkit;
-import org.bukkit.command.*;
-import org.bukkit.entity.Player;
-
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import org.bukkit.Bukkit;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandExecutor;
+import org.bukkit.command.CommandSender;
+import org.bukkit.entity.Player;
 
 public final class HomesCommand implements CommandExecutor {
 
@@ -37,10 +38,11 @@ public final class HomesCommand implements CommandExecutor {
             return true;
         }
 
-        final boolean isHomes = cmd.getName().equalsIgnoreCase("homes") || label.equalsIgnoreCase("homes");
+        // Use cmd.getName() (canonical), not label (can be alias)
+        final boolean isHomes = cmd.getName().equalsIgnoreCase("homes");
         final String base = isHomes ? "huskhomes:homes" : "huskhomes:home";
 
-        // If player used args, forward to HuskHomes so /home <name> still works
+        // If player used args, forward to HuskHomes so /home <name> works
         if (args.length > 0) {
             StringBuilder sb = new StringBuilder();
             for (String a : args) {
@@ -53,7 +55,7 @@ public final class HomesCommand implements CommandExecutor {
 
             boolean ok;
             try {
-                ok = Bukkit.dispatchCommand(p, forward);
+                ok = Bukkit.dispatchCommand(sender, forward);
             } catch (Throwable t) {
                 ok = false;
             }
@@ -66,18 +68,18 @@ public final class HomesCommand implements CommandExecutor {
 
         // No args:
         // If HomeMenu toggle is OFF, do NOT open GUI — forward to HuskHomes base command instead.
-        boolean menuOn = true;
+        boolean menuOn;
         try {
-            menuOn = toggles.isHomeMenuOn(p); // <-- your ToggleManager method
+            menuOn = toggles.isHomeMenuOn(p);
         } catch (Throwable ignored) {
-            // If toggles breaks for some reason, safest behavior is: forward to HuskHomes.
+            // safest behavior: forward to HuskHomes
             menuOn = false;
         }
 
         if (!menuOn) {
             boolean ok;
             try {
-                ok = Bukkit.dispatchCommand(p, base);
+                ok = Bukkit.dispatchCommand(sender, base);
             } catch (Throwable t) {
                 ok = false;
             }
