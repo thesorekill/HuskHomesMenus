@@ -21,8 +21,8 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
-import org.bukkit.block.data.BlockData;
 import org.bukkit.block.Sign;
+import org.bukkit.block.data.BlockData;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -247,8 +247,11 @@ public final class HomesMenu implements Listener {
 
         final boolean useFiller;
 
+        // ✅ Only center THE BEDS/ACTIONS per line (NOT the whole grid width)
+        final boolean centerBeds;
+
         Layout(int rows, int columns, int teleportStartSlot, int actionStartSlot,
-               int actionOffsetRows, int lineStrideRows, boolean useFiller) {
+               int actionOffsetRows, int lineStrideRows, boolean useFiller, boolean centerBeds) {
             this.rows = rows;
             this.columns = columns;
             this.teleportStartSlot = teleportStartSlot;
@@ -256,6 +259,7 @@ public final class HomesMenu implements Listener {
             this.actionOffsetRows = actionOffsetRows;
             this.lineStrideRows = lineStrideRows;
             this.useFiller = useFiller;
+            this.centerBeds = centerBeds;
         }
     }
 
@@ -298,6 +302,22 @@ public final class HomesMenu implements Listener {
     }
 
     // ---------------------------------------------------------------------
+    // ✅ Center ONLY the actual beds/actions per line (no grid-width centering)
+    // ---------------------------------------------------------------------
+
+    private int perLineCenterOffset(Layout l, int itemsThisLine) {
+        if (l == null || !l.centerBeds) return 0;
+
+        int cols = Math.max(1, l.columns);
+        int items = Math.max(0, Math.min(itemsThisLine, cols));
+        int diff = cols - items;
+        if (diff <= 0) return 0;
+
+        // Use ceil(diff/2) so a single missing item shifts by 1 (looks centered in a 9-wide GUI)
+        return (diff + 1) / 2;
+    }
+
+    // ---------------------------------------------------------------------
     // Build / Render homes menu
     // ---------------------------------------------------------------------
 
@@ -305,15 +325,19 @@ public final class HomesMenu implements Listener {
         final int rows = clamp(config.homesRows(), 1, 6);
         final int cols = clamp(config.homesLayoutColumns(), 1, 9);
 
+        // config flag: menus.homes.center (default true)
+        final boolean centerBeds = plugin.getConfig().getBoolean("menus.homes.center", true);
+
+        // ✅ NO grid-width centering: use configured start slots as-is
         final int teleportStart = clamp(config.homesTeleportRowStartSlot(), 0, rows * 9 - 1);
-        final int actionStart = clamp(config.homesActionRowStartSlot(), 0, rows * 9 - 1);
+        final int actionStart   = clamp(config.homesActionRowStartSlot(), 0, rows * 9 - 1);
 
         final int actionOffsetRows = Math.max(1, config.homesActionRowOffsetRows());
         final int lineStrideRows = Math.max(1, config.homesLineStrideRows());
 
         final boolean useFiller = config.homesUseFiller();
 
-        Layout layout = new Layout(rows, cols, teleportStart, actionStart, actionOffsetRows, lineStrideRows, useFiller);
+        Layout layout = new Layout(rows, cols, teleportStart, actionStart, actionOffsetRows, lineStrideRows, useFiller, centerBeds);
 
         int lines = Math.max(1, computeLinesThatFit(layout));
         int perPage = Math.max(1, lines * cols);
@@ -381,13 +405,18 @@ public final class HomesMenu implements Listener {
         int startHome = page * holder.perPage() + 1;
         int endHome = Math.min(maxHomes, startHome + holder.perPage() - 1);
 
+        final int countInPage = Math.max(0, endHome - startHome + 1);
+
         for (int homeNumber = startHome; homeNumber <= endHome; homeNumber++) {
             int idx = homeNumber - startHome;
             int line = idx / layout.columns;
             int col = idx % layout.columns;
 
-            int bedSlot = slotForTeleport(layout, line, col);
-            int actionSlot = slotForAction(layout, line, col);
+            // ✅ how many items actually exist on this line for THIS page (for centering)
+            int itemsThisLine = Math.min(layout.columns, Math.max(0, countInPage - (line * layout.columns)));
+
+            int bedSlot = slotForTeleport(layout, line, col, itemsThisLine);
+            int actionSlot = slotForAction(layout, line, col, itemsThisLine);
             if (!slotInInventory(bedSlot, inv.getSize()) || !slotInInventory(actionSlot, inv.getSize())) continue;
 
             String actualName = slotMap.get(homeNumber);
@@ -649,7 +678,7 @@ public final class HomesMenu implements Listener {
     private void setSignLinesBestEffort(Sign sign, String l1, String l2, String l3, String l4) {
         if (sign == null) return;
 
-        String[] raw = new String[]{
+        String[] raw = new String[] {
                 l1 == null ? "" : l1,
                 l2 == null ? "" : l2,
                 l3 == null ? "" : l3,
@@ -801,12 +830,9 @@ public final class HomesMenu implements Listener {
 
         final String homeName;
         if (typed == null || typed.isBlank() || typed.equals(String.valueOf(session.homeNumber))) {
-            // Important: treat blank (or effectively blank) as "use number"
-            // If the player typed nothing (or only junk stripped by sanitize), name = home number
             if (rawLine0 == null || rawLine0.trim().isEmpty() || stripLegacyColor(rawLine0).trim().isEmpty()) {
                 homeName = String.valueOf(session.homeNumber);
             } else {
-                // They typed something but it sanitized down to the fallback number; keep it
                 homeName = typed;
             }
         } else {
@@ -873,6 +899,7 @@ public final class HomesMenu implements Listener {
         if (server == null) server = callNoArg(h, "server");
         if (server == null) server = callNoArg(h, "getServerName");
         if (server == null) server = callNoArg(h, "getServerId");
+        if (server == null) server = callNoArg(h, "getServerID");
         if (server == null) server = callNoArg(h, "getServerID");
 
         if (server instanceof String s) return s;
@@ -1089,7 +1116,12 @@ public final class HomesMenu implements Listener {
         }
 
         Layout l = holder.layout();
-        HomeSlotRef ref = resolveHomeSlot(l, slot, holder.perPage());
+
+        int startHome = holder.page() * holder.perPage() + 1;
+        int endHome = Math.min(holder.maxHomes(), startHome + holder.perPage() - 1);
+        int countInPage = Math.max(0, endHome - startHome + 1);
+
+        HomeSlotRef ref = resolveHomeSlot(l, slot, countInPage);
         if (ref == null) return;
 
         int homeNumber = holder.page() * holder.perPage() + ref.indexInPage + 1;
@@ -1323,18 +1355,22 @@ public final class HomesMenu implements Listener {
         }
     }
 
-    private HomeSlotRef resolveHomeSlot(Layout l, int clickedSlot, int perPage) {
+    private HomeSlotRef resolveHomeSlot(Layout l, int clickedSlot, int countInPage) {
         int cols = l.columns;
-        for (int idx = 0; idx < perPage; idx++) {
+
+        for (int idx = 0; idx < countInPage; idx++) {
             int line = idx / cols;
             int col = idx % cols;
 
-            int bedSlot = slotForTeleport(l, line, col);
+            int itemsThisLine = Math.min(cols, Math.max(0, countInPage - (line * cols)));
+
+            int bedSlot = slotForTeleport(l, line, col, itemsThisLine);
             if (bedSlot == clickedSlot) return new HomeSlotRef(idx, HomeSlotKind.TELEPORT);
 
-            int actionSlot = slotForAction(l, line, col);
+            int actionSlot = slotForAction(l, line, col, itemsThisLine);
             if (actionSlot == clickedSlot) return new HomeSlotRef(idx, HomeSlotKind.ACTION);
         }
+
         return null;
     }
 
@@ -1401,8 +1437,9 @@ public final class HomesMenu implements Listener {
 
         int lines = 0;
         for (int line = 0; line < 100; line++) {
-            int bedSlot = slotForTeleport(l, line, 0);
-            int actionSlot = slotForAction(l, line, 0);
+            // when checking fit, assume a full line (offset=0)
+            int bedSlot = slotForTeleport(l, line, 0, l.columns);
+            int actionSlot = slotForAction(l, line, 0, l.columns);
 
             if (!slotInInventory(bedSlot, invRows * 9) || !slotInInventory(actionSlot, invRows * 9)) break;
 
@@ -1416,18 +1453,22 @@ public final class HomesMenu implements Listener {
         return Math.max(1, lines);
     }
 
-    private int slotForTeleport(Layout l, int line, int col) {
+    private int slotForTeleport(Layout l, int line, int col, int itemsThisLine) {
         int baseRow = (l.teleportStartSlot / 9) + (line * l.lineStrideRows);
         int baseCol = (l.teleportStartSlot % 9);
-        return baseRow * 9 + (baseCol + col);
+
+        int off = perLineCenterOffset(l, itemsThisLine);
+        return baseRow * 9 + (baseCol + off + col);
     }
 
-    private int slotForAction(Layout l, int line, int col) {
+    private int slotForAction(Layout l, int line, int col, int itemsThisLine) {
         int teleportBaseRow = (l.teleportStartSlot / 9) + (line * l.lineStrideRows);
         int actionRow = teleportBaseRow + l.actionOffsetRows;
 
         int baseCol = (l.actionStartSlot % 9);
-        return actionRow * 9 + (baseCol + col);
+
+        int off = perLineCenterOffset(l, itemsThisLine);
+        return actionRow * 9 + (baseCol + off + col);
     }
 
     private boolean slotInInventory(int slot, int size) {
@@ -1450,14 +1491,19 @@ public final class HomesMenu implements Listener {
     }
 
     // ---------------------------------------------------------------------
-    // Max homes logic (unchanged)
+    // ✅ Max homes logic (FIXED per your request)
     // ---------------------------------------------------------------------
-
+    // Goal:
+    // 1) If the player has huskhomes.max_homes.<#>, use that number (beds shown).
+    // 2) ONLY if they do NOT have any huskhomes.max_homes.<#>, fall back to HuskHomes config general.max_homes.
     private int getMaxHomes(Player p) {
-        int base = readHuskHomesMaxHomesFromConfig();
         int permMax = readMaxHomesFromPermissions(p);
-        int out = Math.max(base, permMax);
-        return Math.max(1, out);
+        if (permMax > 0) {
+            return permMax; // ✅ permission decides menu size
+        }
+
+        int cfgMax = readHuskHomesMaxHomesFromConfig();
+        return Math.max(1, cfgMax); // ✅ fallback only if no perm
     }
 
     private int readHuskHomesMaxHomesFromConfig() {
@@ -1474,6 +1520,8 @@ public final class HomesMenu implements Listener {
     }
 
     private int readMaxHomesFromPermissions(Player p) {
+        if (p == null) return 0;
+
         int best = 0;
         for (var info : p.getEffectivePermissions()) {
             if (info == null || !info.getValue()) continue;
@@ -1484,6 +1532,10 @@ public final class HomesMenu implements Listener {
             if (!lower.startsWith("huskhomes.max_homes.")) continue;
 
             String tail = lower.substring("huskhomes.max_homes.".length());
+
+            // Ignore wildcard (huskhomes.max_homes.*) since it doesn't specify a number
+            if (tail.equals("*")) continue;
+
             try {
                 int n = Integer.parseInt(tail);
                 if (n > best) best = n;

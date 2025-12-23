@@ -11,8 +11,8 @@
 package net.chumbucket.huskhomesmenus;
 
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
-import net.kyori.adventure.text.format.TextDecoration; // ✅ NEW
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.configuration.ConfigurationSection;
@@ -94,7 +94,6 @@ public final class HHMConfig {
 
     /**
      * Converts legacy &-colored text into a normalized legacy-colored String.
-     * (Useful when older parts of the code still build Strings.)
      */
     public String color(String s) {
         if (s == null) return "";
@@ -238,7 +237,140 @@ public final class HHMConfig {
     }
 
     // ---------------------------------------------------------------------
-    // ✅ NO-ITALICS FIX (the real fix)
+    // ✅ Warps menu config helpers (ADDED)
+    // ---------------------------------------------------------------------
+
+    public boolean warpsMenuEnabled() {
+        return plugin.getConfig().getBoolean("menus.warps.enabled", true);
+    }
+
+    public String warpsTitle() {
+        return plugin.getConfig().getString("menus.warps.title", "&8Warps");
+    }
+
+    public int warpsRows() {
+        int r = plugin.getConfig().getInt("menus.warps.rows", 4);
+        return Math.max(1, Math.min(6, r));
+    }
+
+    public boolean warpsUseFiller() {
+        return plugin.getConfig().getBoolean("menus.warps.use_filler", false);
+    }
+
+    public MenuItemTemplate warpsFillerItem() {
+        return MenuItemTemplate.fromSection(
+                plugin.getConfig().getConfigurationSection("menus.warps.filler"),
+                new MenuItemTemplate(Material.GRAY_STAINED_GLASS_PANE, " ", Collections.emptyList(), false, 0)
+        );
+    }
+
+    public List<Integer> warpsItemSlots(int rows) {
+        // rows provided for symmetry with homes; slot list is independent
+        List<Integer> slots = plugin.getConfig().getIntegerList("menus.warps.layout.item_slots");
+        if (slots == null) return Collections.emptyList();
+
+        // sanitize: keep only valid slots for this inventory size
+        int size = Math.max(1, Math.min(6, rows)) * 9;
+        List<Integer> out = new ArrayList<>();
+        for (Integer s : slots) {
+            if (s == null) continue;
+            if (s >= 0 && s < size && !out.contains(s)) out.add(s);
+        }
+        return out;
+    }
+
+    public boolean warpsShowLocked() {
+        return plugin.getConfig().getBoolean("menus.warps.show_locked_warps", false);
+    }
+
+    public MenuItemTemplate warpsTeleportItem() {
+        return MenuItemTemplate.fromSection(
+                plugin.getConfig().getConfigurationSection("menus.warps.warp_items.teleport"),
+                new MenuItemTemplate(Material.ENDER_PEARL, "&b%warp_name%", List.of("&7Click to warp"), false, 0)
+        );
+    }
+
+    public MenuItemTemplate warpsLockedItem() {
+        return MenuItemTemplate.fromSection(
+                plugin.getConfig().getConfigurationSection("menus.warps.warp_items.locked"),
+                new MenuItemTemplate(Material.BARRIER, "&c%warp_name%", List.of("&7You don't have permission."), false, 0)
+        );
+    }
+
+    public MenuItemTemplate warpsEmptyItem() {
+        return MenuItemTemplate.fromSection(
+                plugin.getConfig().getConfigurationSection("menus.warps.warp_items.empty"),
+                new MenuItemTemplate(Material.GRAY_DYE, "&7No warps available", Collections.emptyList(), false, 0)
+        );
+    }
+
+    // Click behavior for warp items
+    public String warpsTeleportClickSound() {
+        return plugin.getConfig().getString("menus.warps.warp_items.teleport.click.sound", "");
+    }
+
+    public boolean warpsTeleportCloseOnClick() {
+        return plugin.getConfig().getBoolean("menus.warps.warp_items.teleport.click.close_menu", true);
+    }
+
+    public String warpsLockedClickSound() {
+        return plugin.getConfig().getString("menus.warps.warp_items.locked.click.sound", "");
+    }
+
+    public boolean warpsLockedCloseOnClick() {
+        return plugin.getConfig().getBoolean("menus.warps.warp_items.locked.click.close_menu", false);
+    }
+
+    // Navigation
+    public boolean warpsNavEnabled() {
+        return plugin.getConfig().getBoolean("menus.warps.navigation.enabled", true);
+    }
+
+    public int warpsNavPrevSlot() { return plugin.getConfig().getInt("menus.warps.navigation.prev_slot", 29); }
+    public int warpsNavPageSlot() { return plugin.getConfig().getInt("menus.warps.navigation.page_slot", 31); }
+    public int warpsNavNextSlot() { return plugin.getConfig().getInt("menus.warps.navigation.next_slot", 33); }
+    public int warpsNavCloseSlot() { return plugin.getConfig().getInt("menus.warps.navigation.close_slot", 35); }
+
+    public String warpsNavClickSound() {
+        return plugin.getConfig().getString("menus.warps.navigation.click_sound", "");
+    }
+
+    public MenuItemTemplate warpsNavPrevItem() {
+        return MenuItemTemplate.fromSection(
+                plugin.getConfig().getConfigurationSection("menus.warps.navigation.prev_item"),
+                new MenuItemTemplate(Material.ARROW, "&ePrevious", List.of("&7Go to page %prev_page%"), false, 0)
+        );
+    }
+
+    public MenuItemTemplate warpsNavPageItem() {
+        return MenuItemTemplate.fromSection(
+                plugin.getConfig().getConfigurationSection("menus.warps.navigation.page_item"),
+                new MenuItemTemplate(Material.PAPER, "&fPage &a%page%&f/&a%pages%", List.of("&7Warps: &f%total_warps%"), false, 0)
+        );
+    }
+
+    public MenuItemTemplate warpsNavNextItem() {
+        return MenuItemTemplate.fromSection(
+                plugin.getConfig().getConfigurationSection("menus.warps.navigation.next_item"),
+                new MenuItemTemplate(Material.ARROW, "&eNext", List.of("&7Go to page %next_page%"), false, 0)
+        );
+    }
+
+    public MenuItemTemplate warpsNavCloseItem() {
+        return MenuItemTemplate.fromSection(
+                plugin.getConfig().getConfigurationSection("menus.warps.navigation.close_item"),
+                new MenuItemTemplate(Material.BARRIER, "&cClose", List.of("&7Close this menu"), false, 0)
+        );
+    }
+
+    // Per-warp override section: menus.warps.warp_overrides.<warpName>
+    public ConfigurationSection warpOverrideSection(String warpName) {
+        if (warpName == null || warpName.isBlank()) return null;
+        return plugin.getConfig().getConfigurationSection("menus.warps.warp_overrides." + warpName);
+    }
+
+    // ---------------------------------------------------------------------
+    // ✅ NO-ITALICS FIX
     // ---------------------------------------------------------------------
 
     private Component deitalicize(Component c) {
