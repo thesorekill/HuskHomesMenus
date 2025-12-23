@@ -28,6 +28,9 @@ public final class HuskHomesMenus extends JavaPlugin {
     private ConfirmRequestMenu confirmMenu;
     private HomesMenu homesMenu;
 
+    // ✅ Warps Menu
+    private WarpsMenu warpsMenu;
+
     // ✅ Update checker
     private UpdateChecker updateChecker;
     private UpdateNotifyOnJoinListener updateNotifyOnJoinListener;
@@ -36,6 +39,9 @@ public final class HuskHomesMenus extends JavaPlugin {
     private TeleportCommandInterceptListener interceptListener;
     private TeleportRequestToggleListener toggleListener;
     private HomesCommandInterceptListener homesInterceptListener;
+
+    // ✅ Warps intercept listener (toggle-respecting)
+    private WarpsCommandInterceptListener warpsInterceptListener;
 
     @Override
     public void onEnable() {
@@ -49,23 +55,10 @@ public final class HuskHomesMenus extends JavaPlugin {
         teardownRuntime();
     }
 
-    /**
-     * Full "plugin-style" reload:
-     * - reload config
-     * - cancel tasks
-     * - unregister listeners
-     * - rebuild runtime objects (messenger/cache/menu/listeners)
-     * - rebind commands/tab completers
-     */
     public boolean fullReload() {
         try {
-            // Close first, then rebuild fresh
             teardownRuntime();
-
-            // Reload config.yml
             reloadConfig();
-
-            // Re-init everything
             initRuntime();
 
             getLogger().info("HuskHomesMenus reloaded. Proxy messenger enabled=" + (messenger != null && messenger.isEnabled()));
@@ -77,9 +70,6 @@ public final class HuskHomesMenus extends JavaPlugin {
         }
     }
 
-    // ------------------------------------------------------------
-    // ✅ Update checker access
-    // ------------------------------------------------------------
     public UpdateChecker getUpdateChecker() {
         return updateChecker;
     }
@@ -87,23 +77,21 @@ public final class HuskHomesMenus extends JavaPlugin {
     // ------------------------------------------------------------
     // Runtime init/teardown
     // ------------------------------------------------------------
+
     private void closeOpenConfirmMenus() {
         try {
             for (Player p : Bukkit.getOnlinePlayers()) {
                 if (p == null) continue;
 
                 Inventory top = null;
-                try {
-                    top = p.getOpenInventory().getTopInventory();
-                } catch (Throwable ignored) {}
+                try { top = p.getOpenInventory().getTopInventory(); }
+                catch (Throwable ignored) {}
 
                 if (top == null) continue;
 
                 InventoryHolder holder = top.getHolder();
                 if (holder instanceof ConfirmRequestMenu.ConfirmHolder) {
-                    try {
-                        p.closeInventory();
-                    } catch (Throwable ignored) {}
+                    try { p.closeInventory(); } catch (Throwable ignored) {}
                 }
             }
         } catch (Throwable ignored) { }
@@ -128,8 +116,26 @@ public final class HuskHomesMenus extends JavaPlugin {
         } catch (Throwable ignored) { }
     }
 
+    private void closeOpenWarpsMenus() {
+        try {
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                if (p == null) continue;
+
+                Inventory top = null;
+                try { top = p.getOpenInventory().getTopInventory(); }
+                catch (Throwable ignored) {}
+
+                if (top == null) continue;
+
+                InventoryHolder holder = top.getHolder();
+                if (holder instanceof WarpsMenu.WarpsHolder) {
+                    try { p.closeInventory(); } catch (Throwable ignored) {}
+                }
+            }
+        } catch (Throwable ignored) { }
+    }
+
     private void initRuntime() {
-        // Fresh wrappers/managers
         this.config = new HHMConfig(this);
         this.toggleManager = new ToggleManager(this);
 
@@ -137,34 +143,39 @@ public final class HuskHomesMenus extends JavaPlugin {
         this.messenger = new OptionalProxyMessenger(this, config);
         this.messenger.tryEnable();
 
-        // Proxy cache (tab completion + region + dimension)
+        // Proxy cache
         this.playerCache = new ProxyPlayerCache(this, config, messenger);
         this.playerCache.start();
 
-        // TP Menu
+        // Menus
         this.confirmMenu = new ConfirmRequestMenu(this, config, playerCache);
-
-        // Homes Menu
         this.homesMenu = new HomesMenu(this, config);
+        this.warpsMenu = new WarpsMenu(this, config);
 
-        // Listeners
+        // Register menu listeners
         Bukkit.getPluginManager().registerEvents(confirmMenu, this);
         Bukkit.getPluginManager().registerEvents(homesMenu, this);
+        Bukkit.getPluginManager().registerEvents(warpsMenu, this);
 
+        // Intercepts
         this.interceptListener = new TeleportCommandInterceptListener(confirmMenu, config, toggleManager);
         Bukkit.getPluginManager().registerEvents(interceptListener, this);
+
         this.homesInterceptListener = new HomesCommandInterceptListener(homesMenu, toggleManager);
         Bukkit.getPluginManager().registerEvents(homesInterceptListener, this);
+
+        // ✅ Warps intercept listener (toggle ON/OFF behavior)
+        this.warpsInterceptListener = new WarpsCommandInterceptListener(warpsMenu, toggleManager, config);
+        Bukkit.getPluginManager().registerEvents(warpsInterceptListener, this);
 
         this.toggleListener = new TeleportRequestToggleListener(this, toggleManager, messenger, config);
         Bukkit.getPluginManager().registerEvents(toggleListener, this);
 
-        // ✅ Update Checker init + listeners (no impact on existing logic)
+        // Update checker
         try {
             if (getConfig().getBoolean("update_checker.enabled", true)) {
                 this.updateChecker = new UpdateChecker(this, config, 130925);
 
-                // Console notify (if enabled)
                 if (getConfig().getBoolean("update_checker.notify_console", true)) {
                     this.updateChecker.checkNowAsync().thenAccept(result -> {
                         if (result == null) return;
@@ -184,20 +195,18 @@ public final class HuskHomesMenus extends JavaPlugin {
                             getLogger().warning("HuskHomesMenus update check: could not determine latest version right now. "
                                     + "Current: " + result.currentVersion()
                                     + (result.latestVersion() != null && !result.latestVersion().isBlank()
-                                        ? " CachedLatest: " + result.latestVersion()
-                                        : ""));
+                                    ? " CachedLatest: " + result.latestVersion()
+                                    : ""));
                         }
                     });
                 }
 
-                // Join notify (if enabled)
                 if (getConfig().getBoolean("update_checker.notify_on_join", true)) {
                     this.updateNotifyOnJoinListener = new UpdateNotifyOnJoinListener(this);
                     Bukkit.getPluginManager().registerEvents(updateNotifyOnJoinListener, this);
                 }
             }
         } catch (Throwable t) {
-            // Never break plugin boot if update check fails
             getLogger().warning("Update checker failed to initialize: " + t.getClass().getSimpleName() + ": " + t.getMessage());
         }
 
@@ -209,12 +218,18 @@ public final class HuskHomesMenus extends JavaPlugin {
         safeSetExecutor("home", new HomesCommand(homesMenu, config, toggleManager));
         safeSetExecutor("homes", new HomesCommand(homesMenu, config, toggleManager));
 
+        // ✅ Warp commands are in your plugin.yml, so bind them
+        WarpsCommand warpsCommand = new WarpsCommand(warpsMenu, config, toggleManager);
+        safeSetExecutor("warp", warpsCommand);
+        safeSetExecutor("warps", warpsCommand);
+
         ToggleCommands toggleCommands = new ToggleCommands(toggleManager, config);
         safeSetExecutor("tpatoggle", toggleCommands);
         safeSetExecutor("tpaheretoggle", toggleCommands);
         safeSetExecutor("tpmenu", toggleCommands);
         safeSetExecutor("tpauto", toggleCommands);
         safeSetExecutor("homemenu", toggleCommands);
+        safeSetExecutor("warpmenu", toggleCommands);
 
         // Admin command
         safeSetExecutor("hhm", new HHMCommand(this, config));
@@ -224,68 +239,44 @@ public final class HuskHomesMenus extends JavaPlugin {
         safeSetTabCompleter("tpahere", new ProxyTabCompleter(playerCache, true));
         safeSetTabCompleter("tpaccept", new ProxyTabCompleter(playerCache, false));
         safeSetTabCompleter("tpdeny", new ProxyTabCompleter(playerCache, false));
+
         HomesTabCompleter homesTab = new HomesTabCompleter(this, config, toggleManager);
         safeSetTabCompleter("home", homesTab);
         safeSetTabCompleter("homes", homesTab);
 
-        // PlaceholderAPI: only register once per server run to avoid duplicates
-        // (PlaceholderExpansion.persist() keeps it loaded across plugin reloads.)
+        // Optional: if you want warp tab completion, you can add a WarpsTabCompleter later
+
+        // PlaceholderAPI
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             try {
                 new Placeholders(this, toggleManager, config).register();
                 getLogger().info("PlaceholderAPI detected; placeholders registered.");
-            } catch (Throwable ignored) {
-                // already registered; fine
-            }
+            } catch (Throwable ignored) { }
         }
     }
 
     private void teardownRuntime() {
-        // Cancel all tasks scheduled by this plugin (includes ProxyPlayerCache timers, refresh tasks, etc.)
-        try {
-            Bukkit.getScheduler().cancelTasks(this);
-        } catch (Throwable ignored) { }
+        try { Bukkit.getScheduler().cancelTasks(this); } catch (Throwable ignored) { }
 
-        // Unregister our listeners
-        try {
-            if (confirmMenu != null) HandlerList.unregisterAll(confirmMenu);
-        } catch (Throwable ignored) { }
+        try { if (confirmMenu != null) HandlerList.unregisterAll(confirmMenu); } catch (Throwable ignored) { }
+        try { if (interceptListener != null) HandlerList.unregisterAll(interceptListener); } catch (Throwable ignored) { }
+        try { if (toggleListener != null) HandlerList.unregisterAll(toggleListener); } catch (Throwable ignored) { }
 
-        try {
-            if (interceptListener != null) HandlerList.unregisterAll(interceptListener);
-        } catch (Throwable ignored) { }
+        try { if (homesMenu != null) HandlerList.unregisterAll(homesMenu); } catch (Throwable ignored) { }
+        try { if (homesInterceptListener != null) HandlerList.unregisterAll(homesInterceptListener); } catch (Throwable ignored) { }
 
-        try {
-            if (toggleListener != null) HandlerList.unregisterAll(toggleListener);
-        } catch (Throwable ignored) { }
+        try { if (warpsMenu != null) HandlerList.unregisterAll(warpsMenu); } catch (Throwable ignored) { }
+        try { if (warpsInterceptListener != null) HandlerList.unregisterAll(warpsInterceptListener); } catch (Throwable ignored) { }
 
-        try {
-            if (homesMenu != null) HandlerList.unregisterAll(homesMenu);
-        } catch (Throwable ignored) { }
-
-        try {
-            if (homesInterceptListener != null) HandlerList.unregisterAll(homesInterceptListener);
-        } catch (Throwable ignored) { }
-
-        // ✅ update checker join listener unregister
-        try {
-            if (updateNotifyOnJoinListener != null) HandlerList.unregisterAll(updateNotifyOnJoinListener);
-        } catch (Throwable ignored) { }
+        try { if (updateNotifyOnJoinListener != null) HandlerList.unregisterAll(updateNotifyOnJoinListener); } catch (Throwable ignored) { }
 
         closeOpenConfirmMenus();
         closeOpenHomesMenus();
+        closeOpenWarpsMenus();
 
-        // Disable proxy messaging (unregister channels)
-        try {
-            if (messenger != null) messenger.disable();
-        } catch (Throwable ignored) { }
+        try { if (messenger != null) messenger.disable(); } catch (Throwable ignored) { }
+        try { PendingRequests.clearGlobalSkins(); } catch (Throwable ignored) { }
 
-        // Optional: clear static caches so reload starts “clean”
-        try {
-            PendingRequests.clearGlobalSkins();
-        } catch (Throwable ignored) { }
-
-        // Drop references
         this.playerCache = null;
         this.confirmMenu = null;
         this.interceptListener = null;
@@ -293,17 +284,16 @@ public final class HuskHomesMenus extends JavaPlugin {
         this.messenger = null;
         this.toggleManager = null;
         this.config = null;
+
         this.homesMenu = null;
         this.homesInterceptListener = null;
 
-        // ✅ update checker refs
+        this.warpsMenu = null;
+        this.warpsInterceptListener = null;
+
         this.updateChecker = null;
         this.updateNotifyOnJoinListener = null;
     }
-
-    // ------------------------------------------------------------
-    // Safe command binding
-    // ------------------------------------------------------------
 
     private void safeSetExecutor(String cmd, org.bukkit.command.CommandExecutor exec) {
         PluginCommand pc = getCommand(cmd);

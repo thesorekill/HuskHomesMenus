@@ -24,36 +24,57 @@ public final class ToggleManager {
     private final NamespacedKey keyTpMenu;
     private final NamespacedKey keyTpAuto;
 
-    // ✅ NEW: toggle for whether to use the Homes GUI intercept (default ON)
+    // ✅ toggle for whether to use the Homes GUI intercept (default ON)
     private final NamespacedKey keyHomeMenu;
 
+    // ✅ toggle for whether to use the Warps GUI intercept (default ON)
+    private final NamespacedKey keyWarpMenu;
+
     public ToggleManager(JavaPlugin plugin) {
+        // ultra-safe: plugin should never be null, but avoid NPE if something calls this wrong
+        if (plugin == null) {
+            throw new IllegalArgumentException("plugin cannot be null");
+        }
+
         this.keyTpa = new NamespacedKey(plugin, "tpa_on");
         this.keyTpahere = new NamespacedKey(plugin, "tpahere_on");
         this.keyTpMenu = new NamespacedKey(plugin, "tpmenu_on");
         this.keyTpAuto = new NamespacedKey(plugin, "tpauto_on");
         this.keyHomeMenu = new NamespacedKey(plugin, "homemenu_on");
+        this.keyWarpMenu = new NamespacedKey(plugin, "warpmenu_on");
     }
 
+    // -------------------------
+    // Reads
+    // -------------------------
+
     public boolean isTpaOn(Player p) {
-        return getFlagDefaultTrue(p, keyTpa);
+        return getFlag(p, keyTpa, true);
     }
 
     public boolean isTpahereOn(Player p) {
-        return getFlagDefaultTrue(p, keyTpahere);
+        return getFlag(p, keyTpahere, true);
     }
 
     public boolean isTpMenuOn(Player p) {
-        return getFlagDefaultTrue(p, keyTpMenu);
+        return getFlag(p, keyTpMenu, true);
     }
 
     public boolean isTpAutoOn(Player p) {
-        return getFlagDefaultFalse(p, keyTpAuto);
+        return getFlag(p, keyTpAuto, false);
     }
 
     public boolean isHomeMenuOn(Player p) {
-        return getFlagDefaultTrue(p, keyHomeMenu);
+        return getFlag(p, keyHomeMenu, true);
     }
+
+    public boolean isWarpMenuOn(Player p) {
+        return getFlag(p, keyWarpMenu, true);
+    }
+
+    // -------------------------
+    // Toggles
+    // -------------------------
 
     public boolean toggleTpa(Player p) {
         boolean now = !isTpaOn(p);
@@ -85,6 +106,16 @@ public final class ToggleManager {
         return now;
     }
 
+    public boolean toggleWarpMenu(Player p) {
+        boolean now = !isWarpMenuOn(p);
+        setFlag(p, keyWarpMenu, now);
+        return now;
+    }
+
+    // -------------------------
+    // Setters
+    // -------------------------
+
     public void setTpMenuOn(Player p, boolean on) {
         setFlag(p, keyTpMenu, on);
     }
@@ -97,21 +128,26 @@ public final class ToggleManager {
         setFlag(p, keyHomeMenu, on);
     }
 
-    private boolean getFlagDefaultTrue(Player p, NamespacedKey key) {
-        PersistentDataContainer pdc = p.getPersistentDataContainer();
-        Byte stored = pdc.get(key, PersistentDataType.BYTE);
-        if (stored == null) return true;
-        return stored == (byte) 1;
+    public void setWarpMenuOn(Player p, boolean on) {
+        setFlag(p, keyWarpMenu, on);
     }
 
-    private boolean getFlagDefaultFalse(Player p, NamespacedKey key) {
-        PersistentDataContainer pdc = p.getPersistentDataContainer();
-        Byte stored = pdc.get(key, PersistentDataType.BYTE);
-        if (stored == null) return false;
+    // -------------------------
+    // Internal helpers
+    // -------------------------
+
+    private boolean getFlag(Player p, NamespacedKey key, boolean defaultValue) {
+        if (p == null || key == null) return defaultValue;
+
+        final PersistentDataContainer pdc = p.getPersistentDataContainer();
+        final Byte stored = pdc.get(key, PersistentDataType.BYTE);
+
+        if (stored == null) return defaultValue;
         return stored == (byte) 1;
     }
 
     private void setFlag(Player p, NamespacedKey key, boolean value) {
+        if (p == null || key == null) return;
         p.getPersistentDataContainer().set(key, PersistentDataType.BYTE, value ? (byte) 1 : (byte) 0);
     }
 }

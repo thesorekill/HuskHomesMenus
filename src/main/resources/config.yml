@@ -12,16 +12,19 @@
 # └──────────────────────────────────────────────────────────────┘
 # Command permissions
 #   huskhomesmenus.admin         -> /hhm <version | reload>
-#   huskhomesmenus.tpa           -> /tpa 
-#   huskhomesmenus.tpahere       -> /tpahere 
-#   huskhomesmenus.tpaccept      -> /tpaccept 
-#   huskhomesmenus.tpdeny        -> /tpdeny 
-#   huskhomesmenus.tpatoggle     -> /tpatoggle 
-#   huskhomesmenus.tpaheretoggle -> /tpaheretoggle 
+#   huskhomesmenus.tpa           -> /tpa
+#   huskhomesmenus.tpahere       -> /tpahere
+#   huskhomesmenus.tpaccept      -> /tpaccept
+#   huskhomesmenus.tpdeny        -> /tpdeny
+#   huskhomesmenus.tpatoggle     -> /tpatoggle
+#   huskhomesmenus.tpaheretoggle -> /tpaheretoggle
 #   huskhomesmenus.tpmenu        -> /tpmenu
 #   huskhomesmenus.tpauto        -> /tpauto
 #   huskhomesmenus.home          -> /home and /homes
 #   huskhomesmenus.homemenu      -> /homemenu
+#
+#   huskhomesmenus.warps         -> /warps (opens GUI)
+#   huskhomesmenus.warpmenu      -> /warpmenu (toggle GUI on/off)
 
 # ┌──────────────────────────────────────────────────────────────┐
 # │  PLACEHOLDERS (If you have PlaceholderAPI Installed)         │
@@ -32,7 +35,7 @@
 # Supported placeholders:
 #
 # 1) Raw booleans (returns "true" / "false")
-#   %huskhomesmenus_tpa%           -> true/false 
+#   %huskhomesmenus_tpa%           -> true/false
 #   %huskhomesmenus_tpahere%       -> true/false
 #   %huskhomesmenus_tpmenu%        -> true/false
 #
@@ -47,7 +50,7 @@
 #   %huskhomesmenus_tpmenu_icon%   -> ✔/✘
 #
 # 4) Pretty (colored & bold; returns "&a&lON" or "&c&lOFF" after colorization)
-#   %huskhomesmenus_tpa_pretty%      
+#   %huskhomesmenus_tpa_pretty%
 #   %huskhomesmenus_tpahere_pretty%
 #   %huskhomesmenus_tpmenu_pretty%
 #   %huskhomesmenus_tpauto_pretty%
@@ -59,9 +62,8 @@
 # 6) Combined status line (colored)
 #   %huskhomesmenus_all_pretty%
 #     -> "TPA: ON/OFF | TPAHERE: ON/OFF | TPMenu: ON/OFF | TPAuto: ON/OFF" (with colors)
-#
 
-# Name of the server (if proxy enabled it should match the proxy name or the  serverID in huskhomes)
+# Name of the server (if proxy enabled it should match the proxy name or the serverID in huskhomes)
 backend_name: hub
 
 # Whether to log extra debugging info (recommended OFF unless testing)
@@ -82,6 +84,7 @@ messages:
   # Prefix added before most chat messages from this plugin.
   # Leave blank ("") if you don't want a prefix.
   prefix: "&8[&bHuskHomesMenus&8]&r "
+
   # Messages sent to the sender of a teleport request (the person typing /tpa or /tpahere)
   sender:
     # Sent to the sender when the target has TPA requests disabled.
@@ -138,17 +141,35 @@ messages:
     tpmenu_status_line:
       enabled: true
       text: "%color%Teleport Menu: %state%"
-    
+
   # Messages shown to players throughout the homes menu
   homes:
     # If enabled, after toggling we will show the status lines below.
     show_status_lines:
       enabled: true
-      
+
     # Format for the HomeMenu status line.
     homemenu_status_line:
       enabled: true
       text: "%color%Home Menu: %state%"
+
+  # Messages shown to players for warp menu + toggle
+  warps:
+    disabled:
+      enabled: true
+      text: "&cWarps menu is disabled."
+
+    menu_off:
+      enabled: true
+      text: "&cWarp Menu is disabled. Use &f/warpmenu &cto enable it."
+
+    show_status_lines:
+      enabled: true
+
+    warpmenu_status_line:
+      enabled: true
+      text: "%color%Warp Menu: %state%"
+
 # ┌──────────────────────────────────────────────────────────────┐
 # │ Proxy / Cross-server messaging                               │
 # └──────────────────────────────────────────────────────────────┘
@@ -195,43 +216,11 @@ cache:
 # - "items" are extra decorative/info items placed in the GUI
 # - Only the buttons under "accept" and "deny" are clickable by default
 #   (Everything in "items" is display-only unless you add click logic in code)
-#
-# Supported "type" values for entries in "items":
-#
-# 1) ITEM
-#    A normal material item with name/lore.
-#    Keys:
-#      material: <Bukkit Material name>
-#      name: "<colored name>"
-#      lore: ["<line1>", "<line2>"]
-#
-# 2) DIMENSION_ITEM
-#    Shows a different icon depending on the SENDER's dimension:
-#      Overworld / Nether / The End
-#    Keys:
-#      overworld_material: GRASS_BLOCK
-#      nether_material: NETHERRACK
-#      end_material: END_STONE
-#      name/lore same as ITEM
-#
-# 3) PLAYER_HEAD
-#    Shows a player head skin.
-#    Keys:
-#      head_of: SENDER | VIEWER | NAME
-#      head_name: "<exact player name>"     # only used when head_of: NAME
-#      name/lore same as ITEM
-#
-# Common keys for any entry in "items":
-# - slot: <number>         # where it appears in the GUI
-# - type: <ITEM | DIMENSION_ITEM | PLAYER_HEAD>
-# - requires_proxy: true   # optional: only show if proxy.enabled = true
-#
-# Placeholders supported in name/lore (Confirm Request Menu):
-# - %sender%          -> the requesting player's name
-# - %dimension_name%  -> Overworld / Nether / The End (based on sender)
-# - %region%          -> "Local" or "Remote" (proxy-aware label)
 
 menus:
+  # ┌──────────────────────────────────────────────────────────────┐
+  # │ TPA Request Menu                                             │
+  # └──────────────────────────────────────────────────────────────┘
   confirm_request:
     # Enables/disables the confirm GUI entirely
     enabled: true
@@ -241,13 +230,13 @@ menus:
     auto_deny_on_close: true
 
     # Fallback menu title (used if request type can't be determined)
-    title: "&7CONFIRM REQUEST"
+    title: "&8ᴄᴏɴꜰɪʀᴍ ʀᴇǫᴜᴇꜱᴛ"
 
     # Title for /tpa requests
-    title_tpa: "&7TELEPORT REQUEST"
+    title_tpa: "&8ᴛᴇʟᴇᴘᴏʀᴛ ʀᴇǫᴜᴇꜱᴛ"
 
     # Title for /tpahere requests
-    title_tpahere: "&7TELEPORT HERE REQUEST"
+    title_tpahere: "&8ᴛᴇʟᴇᴘᴏʀᴛ ʜᴇʀᴇ ʀᴇǫᴜᴇꜱᴛ"
 
     # GUI size in rows (rows * 9 slots)
     rows: 3
@@ -268,7 +257,7 @@ menus:
       # Shows the SENDER's dimension as text + correct dimension icon
       - slot: 12
         type: DIMENSION_ITEM
-        name: "&a&lLOCATION"
+        name: "&a&lʟᴏᴄᴀᴛɪᴏɴ"
         lore:
           - "&7%dimension_name%"
         overworld_material: GRASS_BLOCK
@@ -279,7 +268,7 @@ menus:
       - slot: 13
         type: PLAYER_HEAD
         head_of: SENDER
-        name: "&a&lPLAYER"
+        name: "&a&lᴘʟᴀʏᴇʀ"
         lore:
           - "&7%sender%"
 
@@ -287,7 +276,7 @@ menus:
       - slot: 14
         type: ITEM
         material: FEATHER
-        name: "&a&lREGION"
+        name: "&a&lʀᴇɢɪᴏɴ"
         lore:
           - "&7%region%"
         requires_proxy: true
@@ -297,7 +286,7 @@ menus:
       slot: 10
       item:
         material: RED_STAINED_GLASS_PANE
-        name: "&c&lCANCEL"
+        name: "&c&lᴄᴀɴᴄᴇʟ"
         lore:
           - "&7Click to cancel the teleport"
         glow: false
@@ -311,7 +300,7 @@ menus:
       slot: 16
       item:
         material: LIME_STAINED_GLASS_PANE
-        name: "&a&lCONFIRM"
+        name: "&a&lᴄᴏɴꜰɪʀᴍ"
         lore:
           - "&7Click to accept %sender%'s request"
         glow: false
@@ -323,21 +312,11 @@ menus:
   # ┌──────────────────────────────────────────────────────────────┐
   # │ Homes Menu                                                   │
   # └──────────────────────────────────────────────────────────────┘
-  #
-  # This menu lists homes in a grid. Each "home" has:
-  # - a TELEPORT slot (bed icon)
-  # - an ACTION slot (save/delete icon)
-  #
-  # Layout is calculated using:
-  # - columns
-  # - teleport_row_start_slot
-  # - action_row_start_slot
-  # - action_row_offset_rows (distance between teleport row and action row)
-  # - line_stride_rows (vertical distance between each home "line")
   homes:
     enabled: true
-    title: "&7HOMES"
+    title: "&8ʜᴏᴍᴇꜱ"
     rows: 4
+
     # Turning center to true will center the beds regardless of the layout.
     center: false
 
@@ -362,21 +341,21 @@ menus:
     home_items:
       # TELEPORT item (shown when a home exists)
       teleport:
-        material: BLUE_BED
-        name: "&bHOME %home_name%"
+        material: LIGHT_BLUE_BED
+        name: "&bʜᴏᴍᴇ %home_name%"
         lore:
-          # - "&7Server: %home_server%"      # only useful when proxy is enabled
-          - "&7World: %home_world%"          # useful for multi-world servers
-          - "&7Dimension: %home_dimension%"  # Overworld / Nether / The End
-          - "&7Coords: %home_coords%"        # or use %home_x%, %home_y%, %home_z%
+          # - "&a&lꜱᴇʀᴠᴇʀ: &7%home_server%"      # only useful when proxy is enabled
+          - "&6&lᴡᴏʀʟᴅ: &7%home_world%"          # useful for multi-world servers
+          - "&b&lᴅɪᴍᴇɴꜱɪᴏɴ: &7%home_dimension%"  # Overworld / Nether / The End
+          - "&5&lᴄᴏᴏʀᴅꜱ: &7%home_coords%"        # or use %home_x%, %home_y%, %home_z%
           - "&fClick to teleport to your home"
         glow: false
         custom_model_data: 0
 
       # TELEPORT item (shown when no home exists)
       empty_bed:
-        material: WHITE_BED
-        name: "&fNO HOME SET"
+        material: LIGHT_GRAY_BED
+        name: "&7NO HOME SET"
         lore: []
         glow: false
         custom_model_data: 0
@@ -385,7 +364,7 @@ menus:
       # Clicking this will create a home (optionally via sign prompt)
       empty_action:
         material: GRAY_DYE
-        name: "&fNO HOME SET"
+        name: "&7ɴᴏ ʜᴏᴍᴇ ꜱᴇᴛ"
         lore:
           - "&7- Click to save your location"
         glow: false
@@ -395,9 +374,9 @@ menus:
       # Clicking this opens delete confirmation (if enabled)
       delete_action:
         material: LIGHT_BLUE_DYE
-        name: "&bHOME %home_name%"
+        name: "&bʜᴏᴍᴇ %home_name%"
         lore:
-          - "&fClick to delete HOME %home_name%"
+          - "&fClick to delete &bHOME %home_name%"
         glow: false
         custom_model_data: 0
 
@@ -444,7 +423,7 @@ menus:
     # Delete confirmation GUI (opened when clicking delete_action)
     delete_confirm:
       enabled: true
-      title: "&7Confirm Delete"
+      title: "&8ᴄᴏɴꜰɪʀᴍ ᴅᴇʟᴇᴛᴇ"
       rows: 3
 
       use_filler: false
@@ -459,7 +438,7 @@ menus:
         cancel:
           slot: 11
           material: RED_STAINED_GLASS_PANE
-          name: "&cCANCEL"
+          name: "&cᴄᴀɴᴄᴇʟ"
           lore:
             - "&7Click to cancel!"
           glow: false
@@ -468,7 +447,7 @@ menus:
         home:
           slot: 13
           material: LIGHT_BLUE_DYE
-          name: "&bHOME %home_name%"
+          name: "&bʜᴏᴍᴇ %home_name%"
           lore: []
           glow: false
           custom_model_data: 0
@@ -476,23 +455,13 @@ menus:
         confirm:
           slot: 15
           material: LIME_STAINED_GLASS_PANE
-          name: "&aCONFIRM"
+          name: "&aᴄᴏɴꜰɪʀᴍ"
           lore:
             - "&7Click to delete"
           glow: false
           custom_model_data: 0
 
     # Sign prompt shown when creating a new home
-    # Notes:
-    # - This is only used when clicking the empty_action item
-    # - If enabled=false, the plugin instantly creates a home using the slot number
-    # - Players are expected to type on line 1 (index 0) in your setup below
-    #
-    # Supported placeholders:
-    #  - %home%    -> slot number they clicked (1..max)
-    #  - %page%    -> current page (1-based)
-    #  - %pages%   -> total pages
-    #  - %player%  -> player name
     create_home_sign:
       # If false: no sign UI; home name becomes the slot number automatically
       enabled: true
@@ -509,3 +478,133 @@ menus:
         - "^^^^^^^^^^^^^^^"       # Instruction line
         - "Name your home"        # Instruction line
         - "Press Done to save"    # Instruction line
+
+  # ┌──────────────────────────────────────────────────────────────┐
+  # │ Warps Menu                                                   │
+  # └──────────────────────────────────────────────────────────────┘
+  warps:
+    enabled: true
+    title: "&8ᴡᴀʀᴘꜱ"
+    rows: 4
+
+    # Background filler behavior (matches homes)
+    use_filler: false
+    filler:
+      material: GRAY_STAINED_GLASS_PANE
+      name: " "
+      lore: []
+      glow: false
+      custom_model_data: 0
+
+    # Optional: explicitly control which slots are used for warp items.
+    # If empty/missing, it will fill all non-nav slots automatically.
+    layout:
+      item_slots: [10, 11, 12, 13, 14, 15, 16, 19, 20, 21, 22, 23, 24, 25]
+
+    # Optional (safe if unused): sorting behavior for display
+    sort:
+      enabled: false
+      mode: NAME_ASC # NAME_ASC, NAME_DESC (only if you implement later)
+
+    # Controls whether warps you *can't use* still appear as "locked" items.
+    # true  = show locked items (but prevent teleport)
+    # false = hide locked warps entirely
+    show_locked_warps: false
+
+    # Items shown for each warp slot
+    warp_items:
+      # Default warp item (shown when warp exists & player can use it)
+      teleport:
+        material: ENDER_PEARL
+        name: "&b%warp_name%"
+        lore:
+          # - "&a&lꜱᴇʀᴠᴇʀ: &7%warp_server%"      # only useful when proxy is enabled
+          - "&6&lᴡᴏʀʟᴅ: &7%warp_world%"          # useful for multi-world servers
+          - "&b&lᴅɪᴍᴇɴꜱɪᴏɴ: &7%warp_dimension%"  # Overworld / Nether / The End
+          - "&5&lᴄᴏᴏʀᴅꜱ: &7%warp_coords%"        # or use %warp_x%, %warp_y%, %warp_z%
+          - "&fClick to teleport %warp_name%"
+        glow: false
+        custom_model_data: 0
+        click:
+          sound: UI_BUTTON_CLICK
+          close_menu: true
+
+      # Shown when a warp exists but player lacks permission (only if show_locked_warps: true)
+      locked:
+        material: BARRIER
+        name: "&c%warp_name%"
+        lore:
+          - "&7You don't have permission."
+        glow: false
+        custom_model_data: 0
+        click:
+          sound: UI_BUTTON_CLICK
+          close_menu: false
+
+      # Shown when there are no warps to display
+      empty:
+        material: GRAY_DYE
+        name: "&7No warps available"
+        lore: []
+        glow: false
+        custom_model_data: 0
+
+    # Page navigation controls (matches homes.navigation)
+    navigation:
+      enabled: true
+      prev_slot: 29
+      page_slot: 31
+      next_slot: 33
+      close_slot: 35
+
+      # Optional: separate nav click sound (falls back to warp_items.teleport.click.sound if you code it that way)
+      click_sound: UI_BUTTON_CLICK
+
+      prev_item:
+        material: ARROW
+        name: "&ePrevious"
+        lore:
+          - "&7Go to page %prev_page%"
+        glow: false
+        custom_model_data: 0
+
+      page_item:
+        material: PAPER
+        name: "&fPage &a%page%&f/&a%pages%"
+        lore:
+          - "&7Warps: &f%total_warps%"
+        glow: false
+        custom_model_data: 0
+
+      next_item:
+        material: ARROW
+        name: "&eNext"
+        lore:
+          - "&7Go to page %next_page%"
+        glow: false
+        custom_model_data: 0
+
+      close_item:
+        material: BARRIER
+        name: "&cClose"
+        lore:
+          - "&7Close this menu"
+        glow: false
+        custom_model_data: 0
+
+    # Optional per-warp overrides (permission + item)
+    # If you implement this later, keep it exactly like this shape.
+    warp_overrides:
+      # Example:
+      # spawn:
+      #   permission: "huskhomes.warp.spawn"
+      #   show_without_permission: false   # (you can map this to show_locked_warps behavior per-warp)
+      #   item:
+      #     material: NETHER_STAR
+      #     name: "&aSpawn"
+      #     lore: ["&7Go to spawn"]
+      #     glow: true
+      #     custom_model_data: 0
+      #     click:
+      #       sound: ENTITY_ENDERMAN_TELEPORT
+      #       close_menu: true

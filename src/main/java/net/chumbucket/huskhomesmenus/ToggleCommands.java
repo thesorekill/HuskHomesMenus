@@ -1,16 +1,8 @@
-/*
- * Copyright © 2025 Sorekill
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- */
-
 package net.chumbucket.huskhomesmenus;
 
-import org.bukkit.command.*;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandExecutor;
+import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
@@ -34,7 +26,14 @@ public final class ToggleCommands implements CommandExecutor {
             return true;
         }
 
-        switch (command.getName().toLowerCase()) {
+        // Ultra-safe: avoid NPEs during weird reload timing
+        if (command == null || toggles == null || config == null) {
+            return true; // do nothing, but don't error
+        }
+
+        final String name = command.getName().toLowerCase();
+
+        switch (name) {
             case "tpatoggle" -> {
                 boolean on = toggles.toggleTpa(p);
                 sendToggleStatus(p, true, on);
@@ -60,7 +59,11 @@ public final class ToggleCommands implements CommandExecutor {
                 sendHomeMenuStatus(p, on);
                 return true;
             }
-
+            case "warpmenu" -> {
+                boolean on = toggles.toggleWarpMenu(p);
+                sendWarpMenuStatus(p, on);
+                return true;
+            }
             default -> {
                 return false;
             }
@@ -89,9 +92,7 @@ public final class ToggleCommands implements CommandExecutor {
         final String basePath = "messages.toggles.tpmenu_status_line";
         if (!config.isEnabled(basePath + ".enabled", true)) return;
 
-        String template = config.raw(basePath + ".text",
-                "%color%Teleport Menu: %state%");
-
+        String template = config.raw(basePath + ".text", "%color%Teleport Menu: %state%");
         template = template
                 .replace("%color%", on ? "&a" : "&c")
                 .replace("%state%", on ? "&lON" : "&lOFF");
@@ -105,9 +106,7 @@ public final class ToggleCommands implements CommandExecutor {
         final String basePath = "messages.toggles.tpauto_status_line";
         if (!config.isEnabled(basePath + ".enabled", true)) return;
 
-        String template = config.raw(basePath + ".text",
-                "%color%Auto Accept TPA: %state%");
-
+        String template = config.raw(basePath + ".text", "%color%Auto Accept TPA: %state%");
         template = template
                 .replace("%color%", on ? "&a" : "&c")
                 .replace("%state%", on ? "&lON" : "&lOFF");
@@ -116,15 +115,12 @@ public final class ToggleCommands implements CommandExecutor {
     }
 
     private void sendHomeMenuStatus(Player p, boolean on) {
-        // Note: uses your nested path under messages.toggles.homes
         if (!config.isEnabled("messages.homes.show_status_lines.enabled", true)) return;
 
         final String basePath = "messages.homes.homemenu_status_line";
         if (!config.isEnabled(basePath + ".enabled", true)) return;
 
-        String template = config.raw(basePath + ".text",
-                "%color%Home Menu: %state%");
-
+        String template = config.raw(basePath + ".text", "%color%Home Menu: %state%");
         template = template
                 .replace("%color%", on ? "&a" : "&c")
                 .replace("%state%", on ? "&lON" : "&lOFF");
@@ -132,8 +128,17 @@ public final class ToggleCommands implements CommandExecutor {
         p.sendMessage(AMP.deserialize(config.prefix() + template));
     }
 
-    @SuppressWarnings("unused")
-    private String color(String s) {
-        return AMP.serialize(AMP.deserialize(s));
+    private void sendWarpMenuStatus(Player p, boolean on) {
+        if (!config.isEnabled("messages.warps.show_status_lines.enabled", true)) return;
+
+        final String basePath = "messages.warps.warpmenu_status_line";
+        if (!config.isEnabled(basePath + ".enabled", true)) return;
+
+        String template = config.raw(basePath + ".text", "%color%Warp Menu: %state%");
+        template = template
+                .replace("%color%", on ? "&a" : "&c")
+                .replace("%state%", on ? "&lON" : "&lOFF");
+
+        p.sendMessage(AMP.deserialize(config.prefix() + template));
     }
 }
