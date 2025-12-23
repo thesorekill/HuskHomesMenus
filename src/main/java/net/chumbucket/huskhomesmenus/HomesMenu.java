@@ -678,7 +678,7 @@ public final class HomesMenu implements Listener {
     private void setSignLinesBestEffort(Sign sign, String l1, String l2, String l3, String l4) {
         if (sign == null) return;
 
-        String[] raw = new String[]{
+        String[] raw = new String[] {
                 l1 == null ? "" : l1,
                 l2 == null ? "" : l2,
                 l3 == null ? "" : l3,
@@ -899,6 +899,7 @@ public final class HomesMenu implements Listener {
         if (server == null) server = callNoArg(h, "server");
         if (server == null) server = callNoArg(h, "getServerName");
         if (server == null) server = callNoArg(h, "getServerId");
+        if (server == null) server = callNoArg(h, "getServerID");
         if (server == null) server = callNoArg(h, "getServerID");
 
         if (server instanceof String s) return s;
@@ -1490,14 +1491,19 @@ public final class HomesMenu implements Listener {
     }
 
     // ---------------------------------------------------------------------
-    // Max homes logic (unchanged)
+    // ✅ Max homes logic (FIXED per your request)
     // ---------------------------------------------------------------------
-
+    // Goal:
+    // 1) If the player has huskhomes.max_homes.<#>, use that number (beds shown).
+    // 2) ONLY if they do NOT have any huskhomes.max_homes.<#>, fall back to HuskHomes config general.max_homes.
     private int getMaxHomes(Player p) {
-        int base = readHuskHomesMaxHomesFromConfig();
         int permMax = readMaxHomesFromPermissions(p);
-        int out = Math.max(base, permMax);
-        return Math.max(1, out);
+        if (permMax > 0) {
+            return permMax; // ✅ permission decides menu size
+        }
+
+        int cfgMax = readHuskHomesMaxHomesFromConfig();
+        return Math.max(1, cfgMax); // ✅ fallback only if no perm
     }
 
     private int readHuskHomesMaxHomesFromConfig() {
@@ -1514,6 +1520,8 @@ public final class HomesMenu implements Listener {
     }
 
     private int readMaxHomesFromPermissions(Player p) {
+        if (p == null) return 0;
+
         int best = 0;
         for (var info : p.getEffectivePermissions()) {
             if (info == null || !info.getValue()) continue;
@@ -1524,6 +1532,10 @@ public final class HomesMenu implements Listener {
             if (!lower.startsWith("huskhomes.max_homes.")) continue;
 
             String tail = lower.substring("huskhomes.max_homes.".length());
+
+            // Ignore wildcard (huskhomes.max_homes.*) since it doesn't specify a number
+            if (tail.equals("*")) continue;
+
             try {
                 int n = Integer.parseInt(tail);
                 if (n > best) best = n;

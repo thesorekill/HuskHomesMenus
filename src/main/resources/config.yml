@@ -320,6 +320,33 @@ menus:
     # Turning center to true will center the beds regardless of the layout.
     center: false
 
+    # ┌──────────────────────────────────────────────────────────────┐
+    # │ Max Homes (Permission Override)                              │
+    # └──────────────────────────────────────────────────────────────┘
+    #
+    # The number of "beds" (home slots) shown in this menu is determined like this:
+    #
+    # 1) If the player has a permission in the format:
+    #      huskhomes.max_homes.<number>
+    #    then the menu will show THAT many homes.
+    #
+    #    Examples:
+    #      - huskhomes.max_homes.1   -> shows 1 home slot
+    #      - huskhomes.max_homes.5   -> shows 5 home slots
+    #      - huskhomes.max_homes.25  -> shows 25 home slots
+    #
+    #    If a player has multiple, the highest number wins.
+    #
+    # 2) If the player has NO huskhomes.max_homes.<number> permission at all,
+    #    then the menu falls back to HuskHomes' config setting:
+    #      HuskHomes/config.yml -> general.max_homes
+    #
+    # Note:
+    # - huskhomes.max_homes.* does NOT specify a number, so it does not control menu size.
+    # - You normally set these via LuckPerms (groups/players), not here in this config.
+    max_homes_permission_info:
+      enabled: true
+
     # Background filler behavior
     use_filler: false
     filler:
@@ -486,6 +513,38 @@ menus:
     enabled: true
     title: "&8ᴡᴀʀᴘꜱ"
     rows: 4
+
+    # ──────────────────────────────────────────────────────────────
+    # PERMISSIONS (how the warps GUI decides what to show / allow)
+    #
+    # There are TWO different kinds of permissions involved:
+    #
+    # 1) COMMAND PERMISSIONS (HuskHomes)
+    #    - huskhomes.command.warp     -> allows /warp
+    #    - huskhomes.command.warplist -> allows /warps (list)
+    #
+    #    These are ONLY checked when the GUI is NOT being used
+    #    (for example: if the GUI is disabled, the player has their GUI toggle OFF,
+    #    or the player runs /warp <name> with arguments and we forward to HuskHomes).
+    #
+    # 2) PER-WARP PERMISSIONS (HuskHomes)
+    #    - huskhomes.warp.<warpname>  -> allows THAT specific warp
+    #    - huskhomes.warp.*           -> allows ALL warps
+    #
+    #    These control which warps show up in the GUI and whether clicking can teleport.
+    #
+    # IMPORTANT "FALLBACK" RULE (to support servers that don't use per-warp perms):
+    # - If a player has ANY per-warp permission node for any existing warp
+    #   (or has huskhomes.warp.*), the GUI will ONLY show the warps they have permission for.
+    # - If a player has ZERO per-warp permission nodes, the GUI will show ALL warps.
+    #
+    # show_locked_warps:
+    # - true  = show warps you can't use as the "locked" item (cannot teleport)
+    # - false = hide warps you can't use entirely
+    #
+    # Warp names are checked case-insensitively: huskhomes.warp.<warpname> is lowercased.
+    # Example: Warp "Spawn" -> permission "huskhomes.warp.spawn"
+    # ──────────────────────────────────────────────────────────────
 
     # Background filler behavior (matches homes)
     use_filler: false
