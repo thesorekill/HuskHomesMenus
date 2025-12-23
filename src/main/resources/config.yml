@@ -381,7 +381,7 @@ menus:
       # TELEPORT item (shown when no home exists)
       empty_bed:
         material: LIGHT_GRAY_BED
-        name: "&7NO HOME SET"
+        name: "&7ɴᴏ ʜᴏᴍᴇ ꜱᴇᴛ"
         lore: []
         glow: false
         custom_model_data: 0
