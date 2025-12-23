@@ -14,6 +14,7 @@ Whether you run a single survival server or a multi-server proxy network, HuskHo
 
 - ⭐ **GUI-based teleport confirmations** — Teleport requests are confirmed through clean, readable menus instead of cluttered chat messages.
 - ⭐ **GUI-based home menu** — Display homes with information like server, world, dimension, and coordinates
+- ⭐ **GUI-based warps menu** — Display warps with information like server, world, dimension, and coordinates
 - ⭐ **HuskHomes-native command wrappers** — Fully compatible with HuskHomes commands (`/tpa`, `/tpahere`, `/tpaccept`, `/tpdeny`) — no learning curve.
 - ⭐ **Cross-server ready** — Supports proxy environments (Velocity or BungeeCord) when HuskHomes is configured with MySQL/MariaDB.
 - ⭐ **Player skins & context awareness** — Displays requester skins and request context in menus, including across servers.
@@ -27,6 +28,10 @@ TP Menu:
 Home Menu:
 
 ![](image-1.png)
+
+Warp Menu:
+
+![](image-2.png)
 
 ## Requirements
 
@@ -59,6 +64,12 @@ HuskHomesMenus provides GUI-enhanced wrappers and player preference toggles for 
 | `/tpaheretoggle` | `/tpaheretoggle` | Toggle receiving `/tpahere` requests | `huskhomesmenus.tpaheretoggle` |
 | `/tpauto` | `/tpauto` | Toggle automatic acceptance of teleport requests | `huskhomesmenus.tpauto` |
 | `/tpmenu` | `/tpmenu` | Toggle the teleport request confirmation menu | `huskhomesmenus.tpmenu` |
+| `/home` | `/home` | Allows opening the home GUI menu | `huskhomesmenus.home` |
+| `/homes` | `/homes` | Allows opening the home GUI menu | `huskhomesmenus.home` |
+| `/homemenu` | `/homemenu` | Toggle the home menu | `huskhomesmenus.homemenu` |
+| `/warp` | `/warp` | Allows opening the warp GUI menu | `huskhomesmenus.warp` |
+| `/warps` | `/warps` | Allows opening the warp GUI menu | `huskhomesmenus.warp` |
+| `/warpmenu` | `/warpmenu` | Toggle the warp menu | `huskhomesmenus.warpmenu` |
 
 ## Permissions
 
@@ -75,6 +86,10 @@ All permissions default to **false** unless otherwise noted and are intended for
 | `huskhomesmenus.tpaheretoggle` | Allows toggling `/tpahere` request reception | false |
 | `huskhomesmenus.tpauto` | Allows toggling automatic acceptance of teleport requests | false |
 | `huskhomesmenus.tpmenu` | Allows toggling the teleport request GUI menu | false |
+| `huskhomesmenus.home` | Allows opening the home menu | false |
+| `huskhomesmenus.homemenu` | Allows toggling the home GUI menu | false |
+| `huskhomesmenus.warp` | Allows opening the warp menu | false |
+| `huskhomesmenus.warpmenu` | Allows toggling the warp GUI menu | false |
 | `huskhomesmenus.*` | Grants all HuskHomesMenus permissions | op |
 
 > **Note:** By default, players must be explicitly granted permissions to send **and accept** teleport requests.
@@ -121,12 +136,8 @@ All options include safe defaults and can be adjusted without restarting the ser
 
 The following features are planned or under consideration for future releases:
 
-- Menus for Homes and Warps
+- Menus for Public Homes
 - Expanded menu customization (icons, text, colors)
-- Additional request context (server, world, distance)
-- Visual request timeout indicators
-- Improved proxy synchronization and caching
-- Optional sound and particle feedback
 
 Planned features are subject to change and will be implemented with a focus on performance, clarity, and network compatibility.
 
