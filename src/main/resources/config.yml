@@ -293,6 +293,10 @@ menus:
       click:
         sound: UI_BUTTON_CLICK
         close_menu: true
+        #player_commands:
+          #- "msg %player% &cDenied &f%sender%&c's request."
+        #console_commands:
+          #- "say %player% denied a request from %sender%"
 
     # "Accept" button (clickable)
     accept:
@@ -307,6 +311,10 @@ menus:
       click:
         sound: UI_BUTTON_CLICK
         close_menu: true
+        #player_commands:
+          #- "msg %player% &aAccepted &f%sender%&a's request."
+        #console_commands:
+          #- "say %player% accepted a request from %sender% (%region% | %dimension_name%)"
 
   # ┌──────────────────────────────────────────────────────────────┐
   # │ Homes Menu                                                   │
@@ -375,6 +383,12 @@ menus:
           - "&b&lᴅɪᴍᴇɴꜱɪᴏɴ: &7%home_dimension%"  # Overworld / Nether / The End
           - "&5&lᴄᴏᴏʀᴅꜱ: &7%home_coords%"        # or use %home_x%, %home_y%, %home_z%
           - "&fClick to teleport to your home"
+        click:
+          #player_commands:
+            #- "msg %player% &aTeleporting to home"
+          #console_commands:
+            #- "say %player% teleported home"
+          close_menu: true
         glow: false
         custom_model_data: 0
 
@@ -383,6 +397,12 @@ menus:
         material: LIGHT_GRAY_BED
         name: "&7ɴᴏ ʜᴏᴍᴇ ꜱᴇᴛ"
         lore: []
+        click:
+          #player_commands:
+            #- "msg %player% &aTeleporting to home"
+          #console_commands:
+            #- "say %player% teleported home"
+          close_menu: false
         glow: false
         custom_model_data: 0
 
@@ -393,6 +413,12 @@ menus:
         name: "&7ɴᴏ ʜᴏᴍᴇ ꜱᴇᴛ"
         lore:
           - "&7- Click to save your location"
+        click:
+          #player_commands:
+            #- "msg %player% &aTeleporting to home"
+          #console_commands:
+            #- "say %player% teleported home"
+          close_menu: true
         glow: false
         custom_model_data: 0
 
@@ -403,6 +429,12 @@ menus:
         name: "&bʜᴏᴍᴇ %home_name%"
         lore:
           - "&fClick to delete &bHOME %home_name%"
+        click:
+          #player_commands:
+            #- "msg %player% &aTeleporting to home"
+          #console_commands:
+            #- "say %player% teleported home"
+          close_menu: false
         glow: false
         custom_model_data: 0
 
@@ -419,6 +451,11 @@ menus:
         name: "&ePrevious"
         lore:
           - "&7Go to page %prev_page%"
+        click:
+          #player_commands:
+            #- "msg %player% &aTeleporting to home"
+          #console_commands:
+            #- "say %player% teleported home"
         glow: false
         custom_model_data: 0
 
@@ -427,6 +464,11 @@ menus:
         name: "&fPage &a%page%&f/&a%pages%"
         lore:
           - "&7Max homes: &f%max_homes%"
+        click:
+          #player_commands:
+            #- "msg %player% &aTeleporting to home"
+          #console_commands:
+            #- "say %player% teleported home"
         glow: false
         custom_model_data: 0
 
@@ -435,6 +477,11 @@ menus:
         name: "&eNext"
         lore:
           - "&7Go to page %next_page%"
+        click:
+          #player_commands:
+            #- "msg %player% &aTeleporting to home"
+          #console_commands:
+            #- "say %player% teleported home"
         glow: false
         custom_model_data: 0
 
@@ -443,6 +490,11 @@ menus:
         name: "&cClose"
         lore:
           - "&7Close this menu"
+        click:
+          #player_commands:
+            #- "msg %player% &aTeleporting to home"
+          #console_commands:
+            #- "say %player% teleported home"
         glow: false
         custom_model_data: 0
 
@@ -467,6 +519,11 @@ menus:
           name: "&cᴄᴀɴᴄᴇʟ"
           lore:
             - "&7Click to cancel!"
+          click:
+            #player_commands:
+              #- "msg %player% did not delete home"
+            #console_commands:
+              #- "say %player% did not delete home"
           glow: false
           custom_model_data: 0
 
@@ -484,6 +541,11 @@ menus:
           name: "&aᴄᴏɴꜰɪʀᴍ"
           lore:
             - "&7Click to delete"
+          click:
+            #player_commands:
+              #- "msg %player% deleted home"
+            #console_commands:
+              #- "say %player% deleted home"
           glow: false
           custom_model_data: 0
 
@@ -585,6 +647,10 @@ menus:
         custom_model_data: 0
         click:
           sound: UI_BUTTON_CLICK
+          #player_commands:
+            #- "msg %player% &aTeleporting to &b%warp_name%&a..."
+          #console_commands:
+            #- "say %player% used warp %warp_name%"
           close_menu: true
 
       # Shown when a warp exists but player lacks permission (only if show_locked_warps: true)
@@ -597,6 +663,10 @@ menus:
         custom_model_data: 0
         click:
           sound: UI_BUTTON_CLICK
+          #player_commands:
+            #- "msg %player% cant use warp"
+          #console_commands:
+            #- "say %player% cant use warp"
           close_menu: false
 
       # Shown when there are no warps to display
@@ -623,6 +693,11 @@ menus:
         name: "&ePrevious"
         lore:
           - "&7Go to page %prev_page%"
+        click:
+          #player_commands:
+          #  - "msg %player% prev page"
+          #console_commands:
+          #  - "say %player% prev page"
         glow: false
         custom_model_data: 0
 
@@ -639,6 +714,11 @@ menus:
         name: "&eNext"
         lore:
           - "&7Go to page %next_page%"
+        click:
+          #player_commands:
+          #  - "msg %player% next page"
+          #console_commands:
+          #  - "say %player% next page"
         glow: false
         custom_model_data: 0
 
@@ -647,6 +727,11 @@ menus:
         name: "&cClose"
         lore:
           - "&7Close this menu"
+        click:
+          #player_commands:
+          #  - "msg %player% Closed menu"
+          #console_commands:
+          #  - "say %player% Closed menu"
         glow: false
         custom_model_data: 0
 
