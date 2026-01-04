@@ -13,7 +13,6 @@ package net.chumbucket.huskhomesmenus;
 import net.william278.huskhomes.api.HuskHomesAPI;
 import net.william278.huskhomes.position.Home;
 import net.william278.huskhomes.user.OnlineUser;
-import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
@@ -26,6 +25,12 @@ import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import java.util.List;
 import java.util.Locale;
 
+/**
+ * Intercepts /home and /homes to open GUI and to support typed "/home <name>" teleport.
+ *
+ * Folia-safe: all Bukkit/player interactions (open inventories, send messages, teleport builder execution)
+ * are done via Sched.run(player, ...), never BukkitScheduler directly.
+ */
 public final class HomesCommandInterceptListener implements Listener {
 
     private final JavaPlugin plugin;
@@ -39,7 +44,9 @@ public final class HomesCommandInterceptListener implements Listener {
      * Backwards-compatible constructor (so you don't have to change HuskHomesMenus.java)
      */
     public HomesCommandInterceptListener(HomesMenu homesMenu, ToggleManager toggles) {
-        this(JavaPlugin.getProvidingPlugin(HomesCommandInterceptListener.class), homesMenu, toggles,
+        this(JavaPlugin.getProvidingPlugin(HomesCommandInterceptListener.class),
+                homesMenu,
+                toggles,
                 new HHMConfig(JavaPlugin.getProvidingPlugin(HomesCommandInterceptListener.class)));
     }
 
@@ -58,24 +65,31 @@ public final class HomesCommandInterceptListener implements Listener {
         final Player p = e.getPlayer();
 
         // ✅ if player disabled home menu, do nothing (let HuskHomes handle /home normally)
-        if (toggles != null && !toggles.isHomeMenuOn(p)) return;
+        if (toggles != null) {
+            try {
+                if (!toggles.isHomeMenuOn(p)) return;
+            } catch (Throwable ignored) {
+                // If toggles misbehaves, safest is to not intercept
+                return;
+            }
+        }
 
-        String msg = e.getMessage();
+        final String msg = e.getMessage();
         if (msg == null) return;
 
-        String trimmed = msg.trim();
+        final String trimmed = msg.trim();
         if (trimmed.isEmpty() || !trimmed.startsWith("/")) return;
 
-        String[] parts = trimmed.split("\\s+");
+        final String[] parts = trimmed.split("\\s+");
         if (parts.length == 0) return;
 
-        String first = parts[0].substring(1);
+        final String first = parts[0].substring(1);
         if (first.isBlank()) return;
 
         String label = first;
         if (label.contains(":")) label = label.split(":", 2)[1];
 
-        String cmd = label.toLowerCase(Locale.ROOT);
+        final String cmd = label.toLowerCase(Locale.ROOT);
 
         // Only care about /home and /homes
         if (!(cmd.equals("home") || cmd.equals("homes"))) return;
@@ -86,7 +100,7 @@ public final class HomesCommandInterceptListener implements Listener {
         // /home or /homes with NO args -> open GUI
         if (parts.length == 1) {
             e.setCancelled(true);
-            homesMenu.open(p);
+            Sched.run(p, () -> homesMenu.open(p));
             return;
         }
 
@@ -102,23 +116,42 @@ public final class HomesCommandInterceptListener implements Listener {
         try {
             api = HuskHomesAPI.getInstance();
         } catch (Throwable t) {
-            p.sendMessage(AMP.deserialize(config.prefix() + "&cHuskHomes API not available."));
+            Sched.run(p, () -> {
+                if (p.isOnline()) {
+                    p.sendMessage(AMP.deserialize(config.prefix() + "&cHuskHomes API not available."));
+                }
+            });
             return;
         }
 
-        final OnlineUser user = api.adaptUser(p);
+        final OnlineUser user;
+        try {
+            user = api.adaptUser(p);
+        } catch (Throwable t) {
+            Sched.run(p, () -> {
+                if (p.isOnline()) {
+                    p.sendMessage(AMP.deserialize(config.prefix() + "&cHuskHomes API not available."));
+                }
+            });
+            return;
+        }
 
-        // 4.9.9: resolve by fetching homes list, then filtering
+        // Resolve by fetching homes list, then filtering (works across HH versions)
         api.getUserHomes(user).thenAccept(homes -> {
-            Bukkit.getScheduler().runTask(plugin, () -> {
+            Sched.run(p, () -> {
                 if (!p.isOnline()) return;
 
-                List<Home> list = (homes == null) ? List.of() : homes;
+                final List<Home> list = (homes == null) ? List.of() : homes;
 
                 Home match = null;
                 for (Home h : list) {
                     if (h == null) continue;
-                    String n = h.getName();
+                    String n;
+                    try {
+                        n = h.getName();
+                    } catch (Throwable ignored) {
+                        continue;
+                    }
                     if (n != null && n.equalsIgnoreCase(homeName)) {
                         match = h;
                         break;
@@ -139,13 +172,12 @@ public final class HomesCommandInterceptListener implements Listener {
                             .toTimedTeleport()
                             .execute();
                 } catch (Throwable t) {
-                    // Keep this generic; different HH versions throw different exception types
                     p.sendMessage(AMP.deserialize(config.prefix() + "&cTeleport failed."));
                     if (config.debug()) t.printStackTrace();
                 }
             });
         }).exceptionally(ex -> {
-            Bukkit.getScheduler().runTask(plugin, () -> {
+            Sched.run(p, () -> {
                 if (p.isOnline()) {
                     p.sendMessage(AMP.deserialize(config.prefix() + "&cFailed to load that home."));
                 }

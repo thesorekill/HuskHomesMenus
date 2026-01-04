@@ -17,7 +17,6 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URI;
-import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
@@ -33,7 +32,7 @@ public final class UpdateChecker {
     public record Result(Status status, String currentVersion, String latestVersion) { }
 
     private final JavaPlugin plugin;
-    private final HHMConfig config; // ✅ NEW
+    private final HHMConfig config;
     private final int resourceId;
 
     private volatile String cachedLatest = null;
@@ -46,7 +45,6 @@ public final class UpdateChecker {
 
     private static final LegacyComponentSerializer AMP = LegacyComponentSerializer.legacyAmpersand();
 
-    // ✅ Updated constructor
     public UpdateChecker(JavaPlugin plugin, HHMConfig config, int resourceId) {
         this.plugin = Objects.requireNonNull(plugin, "plugin");
         this.config = Objects.requireNonNull(config, "config");
@@ -68,7 +66,6 @@ public final class UpdateChecker {
                     return new Result(Status.UNKNOWN, current, latest);
                 }
 
-                // (Optional but recommended) Only OUTDATED if current < latest
                 int cmp = compareVersions(current, latest);
                 if (cmp < 0) return new Result(Status.OUTDATED, current, latest);
                 return new Result(Status.UP_TO_DATE, current, latest);
@@ -84,9 +81,10 @@ public final class UpdateChecker {
     public CompletableFuture<Result> checkIfNeededAsync() {
         long now = System.currentTimeMillis();
 
-        if (cachedLatest != null && (now - lastCheckMs) < CACHE_MS) {
+        String latestCached = cachedLatest;
+        if (latestCached != null && (now - lastCheckMs) < CACHE_MS) {
             String current = safe(getCurrentVersionBestEffort());
-            String latest = safe(cachedLatest);
+            String latest = safe(latestCached);
 
             if (current.isBlank() || latest.isBlank()) {
                 return CompletableFuture.completedFuture(new Result(Status.UNKNOWN, current, latest));
@@ -99,28 +97,34 @@ public final class UpdateChecker {
         return checkNowAsync();
     }
 
-    // ✅ Uses config.prefix()
+    /**
+     * Folia-safe: messages are scheduled onto the player's scheduler (or main thread on Paper/Spigot).
+     */
     public void notifyPlayerIfOutdated(Player p, String permission) {
         if (p == null) return;
-        if (permission != null && !permission.isBlank() && !p.hasPermission(permission)) return;
 
+        // compute first (safe off-thread), but we still run sendMessage via Sched
         String current = safe(getCurrentVersionBestEffort());
         String latest = safe(cachedLatest);
 
+        if (permission != null && !permission.isBlank() && !p.hasPermission(permission)) return;
         if (latest.isBlank() || current.isBlank()) return;
-
-        // Only notify if current < latest
         if (compareVersions(current, latest) >= 0) return;
 
-        p.sendMessage(AMP.deserialize(config.prefix() + "&eUpdate available: &f" + current + " &e→ &a" + latest));
-        p.sendMessage(AMP.deserialize(config.prefix() + "&7Spigot: &fhttps://www.spigotmc.org/resources/" + resourceId + "/"));
+        final String msg1 = config.prefix() + "&eUpdate available: &f" + current + " &e→ &a" + latest;
+        final String msg2 = config.prefix() + "&7Spigot: &fhttps://www.spigotmc.org/resources/" + resourceId + "/";
+
+        Sched.run(p, () -> {
+            if (!p.isOnline()) return;
+            p.sendMessage(AMP.deserialize(msg1));
+            p.sendMessage(AMP.deserialize(msg2));
+        });
     }
 
     private String fetchLatestVersionFromSpigot() throws Exception {
         URI uri = URI.create("https://api.spiget.org/v2/resources/" + resourceId + "/versions/latest");
-        URL url = uri.toURL();
 
-        HttpURLConnection con = (HttpURLConnection) url.openConnection();
+        HttpURLConnection con = (HttpURLConnection) uri.toURL().openConnection();
         con.setRequestMethod("GET");
         con.setConnectTimeout(6000);
         con.setReadTimeout(6000);
@@ -145,10 +149,13 @@ public final class UpdateChecker {
                 return "";
             }
             return safe(m.group(1));
+        } finally {
+            try { con.disconnect(); } catch (Throwable ignored) { }
         }
     }
 
     private String getCurrentVersionBestEffort() {
+        // Modern API (Paper)
         try {
             Object meta = plugin.getClass().getMethod("getPluginMeta").invoke(plugin);
             if (meta != null) {
@@ -157,6 +164,7 @@ public final class UpdateChecker {
             }
         } catch (Throwable ignored) { }
 
+        // Legacy API (Spigot)
         try {
             Object desc = plugin.getClass().getMethod("getDescription").invoke(plugin);
             if (desc != null) {
@@ -172,20 +180,40 @@ public final class UpdateChecker {
         return s == null ? "" : s.trim();
     }
 
-    // ✅ Simple numeric compare for versions like 1.2.3
+    /**
+     * Numeric compare for versions like:
+     *  - 1.2.3
+     *  - v1.2.3
+     *  - 1.2.3-SNAPSHOT
+     *
+     * Extracts numeric segments and compares lexicographically.
+     */
     private static int compareVersions(String a, String b) {
-        if (a == null) a = "";
-        if (b == null) b = "";
+        String aa = (a == null) ? "" : a.trim();
+        String bb = (b == null) ? "" : b.trim();
 
-        String[] pa = a.trim().split("[^0-9]+");
-        String[] pb = b.trim().split("[^0-9]+");
+        String[] pa = aa.split("[^0-9]+");
+        String[] pb = bb.split("[^0-9]+");
 
         int n = Math.max(pa.length, pb.length);
         for (int i = 0; i < n; i++) {
-            int ai = (i < pa.length && !pa[i].isEmpty()) ? Integer.parseInt(pa[i]) : 0;
-            int bi = (i < pb.length && !pb[i].isEmpty()) ? Integer.parseInt(pb[i]) : 0;
+            int ai = parseIntSafe(i < pa.length ? pa[i] : "");
+            int bi = parseIntSafe(i < pb.length ? pb[i] : "");
             if (ai != bi) return Integer.compare(ai, bi);
         }
         return 0;
+    }
+
+    private static int parseIntSafe(String s) {
+        if (s == null) return 0;
+        String t = s.trim();
+        if (t.isEmpty()) return 0;
+        try {
+            // guard against absurdly large numbers
+            if (t.length() > 9) t = t.substring(0, 9);
+            return Integer.parseInt(t);
+        } catch (Throwable ignored) {
+            return 0;
+        }
     }
 }

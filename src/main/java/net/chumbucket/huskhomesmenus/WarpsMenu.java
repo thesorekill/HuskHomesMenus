@@ -89,7 +89,8 @@ public final class WarpsMenu implements Listener {
                 return n == null ? "" : n.toLowerCase(Locale.ROOT);
             }));
 
-            Bukkit.getScheduler().runTask(plugin, () -> {
+            // ✅ Folia-safe: hop back onto the player's thread via Sched
+            Sched.run(player, () -> {
                 if (!player.isOnline()) return;
 
                 List<Integer> itemSlots = config.warpsItemSlots(rows);
@@ -162,8 +163,9 @@ public final class WarpsMenu implements Listener {
                 player.openInventory(inv);
             });
         }).exceptionally(err -> {
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                if (player.isOnline()) {
+            // ✅ Folia-safe: message on player's thread
+            Sched.run(player, () -> {
+                if (player != null && player.isOnline()) {
                     player.sendMessage(config.msgWithPrefix("messages.warps.load_failed", "&cFailed to load warps."));
                 }
             });
@@ -353,7 +355,8 @@ public final class WarpsMenu implements Listener {
             Warp targetWarp = visible.get(idx);
             String warpName = safeWarpName(targetWarp);
 
-            Bukkit.getScheduler().runTask(plugin, () -> {
+            // ✅ Folia-safe: hop back onto the player's thread via Sched
+            Sched.run(p, () -> {
                 if (!p.isOnline()) return;
                 if (warpName == null || warpName.isBlank()) return;
 
@@ -406,7 +409,8 @@ public final class WarpsMenu implements Listener {
                 }
             });
         }).exceptionally(ex -> {
-            Bukkit.getScheduler().runTask(plugin, () -> {
+            // ✅ Folia-safe: message on player's thread
+            Sched.run(p, () -> {
                 if (p.isOnline()) {
                     p.sendMessage(config.msgWithPrefix("messages.warps.load_failed", "&cFailed to load warps."));
                 }

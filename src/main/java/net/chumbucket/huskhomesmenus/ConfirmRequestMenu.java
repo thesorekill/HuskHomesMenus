@@ -20,7 +20,6 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
-import org.bukkit.scheduler.BukkitRunnable;
 
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
@@ -240,109 +239,119 @@ public final class ConfirmRequestMenu implements Listener {
         return false;
     }
 
+    // =========================================================
+    // ✅ Folia-safe refresh loops (2 ticks, up to 20 tries)
+    // =========================================================
+
+    private boolean stillViewing(Player viewer, Inventory inv) {
+        if (viewer == null || !viewer.isOnline()) return false;
+        try {
+            return viewer.getOpenInventory() != null && viewer.getOpenInventory().getTopInventory() == inv;
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     private void scheduleRegionRefresh(Player viewer, Inventory inv, String senderName, List<Integer> regionSlots) {
-        new BukkitRunnable() {
-            int tries = 0;
+        scheduleRegionRefresh0(viewer, inv, senderName, regionSlots, 0);
+    }
 
-            @Override
-            public void run() {
-                tries++;
+    private void scheduleRegionRefresh0(Player viewer, Inventory inv, String senderName, List<Integer> regionSlots, int tries) {
+        Sched.later(viewer, 2L, () -> {
+            int nextTries = tries + 1;
 
-                if (viewer == null || !viewer.isOnline()) { cancel(); return; }
-                if (viewer.getOpenInventory() == null || viewer.getOpenInventory().getTopInventory() != inv) { cancel(); return; }
+            if (!stillViewing(viewer, inv)) return;
 
-                String srv = playerCache.getServerForFresh(senderName);
-                if (srv != null && !srv.isBlank()) {
-                    updateRegionSlots(inv, regionSlots, srv.trim());
-                    try { viewer.updateInventory(); } catch (Throwable ignored) {}
-                    cancel();
-                    return;
-                }
-
-                if (tries >= 20) {
-                    updateRegionSlots(inv, regionSlots, "Offline");
-                    try { viewer.updateInventory(); } catch (Throwable ignored) {}
-                    cancel();
-                }
+            String srv = playerCache.getServerForFresh(senderName);
+            if (srv != null && !srv.isBlank()) {
+                updateRegionSlots(inv, regionSlots, srv.trim());
+                try { viewer.updateInventory(); } catch (Throwable ignored) {}
+                return;
             }
-        }.runTaskTimer(plugin, 2L, 2L);
+
+            if (nextTries >= 20) {
+                updateRegionSlots(inv, regionSlots, "Offline");
+                try { viewer.updateInventory(); } catch (Throwable ignored) {}
+                return;
+            }
+
+            scheduleRegionRefresh0(viewer, inv, senderName, regionSlots, nextTries);
+        });
     }
 
     private void scheduleDimensionRefresh(Player viewer, Inventory inv, String senderName, List<Integer> dimensionSlots) {
-        new BukkitRunnable() {
-            int tries = 0;
+        scheduleDimensionRefresh0(viewer, inv, senderName, dimensionSlots, 0);
+    }
 
-            @Override
-            public void run() {
-                tries++;
+    private void scheduleDimensionRefresh0(Player viewer, Inventory inv, String senderName, List<Integer> dimensionSlots, int tries) {
+        Sched.later(viewer, 2L, () -> {
+            int nextTries = tries + 1;
 
-                if (viewer == null || !viewer.isOnline()) { cancel(); return; }
-                if (viewer.getOpenInventory() == null || viewer.getOpenInventory().getTopInventory() != inv) { cancel(); return; }
+            if (!stillViewing(viewer, inv)) return;
 
-                String dim = playerCache.getOrRequestDimension(senderName, viewer.getName());
-                if (dim != null && !dim.isBlank() && !"Loading...".equalsIgnoreCase(dim) && !"Unknown".equalsIgnoreCase(dim)) {
-                    updateDimensionSlots(inv, dimensionSlots, dim);
-                    try { viewer.updateInventory(); } catch (Throwable ignored) {}
-                    cancel();
-                    return;
-                }
-
-                if (tries >= 20) {
-                    updateDimensionSlots(inv, dimensionSlots, "Unknown");
-                    try { viewer.updateInventory(); } catch (Throwable ignored) {}
-                    cancel();
-                }
+            String dim = playerCache.getOrRequestDimension(senderName, viewer.getName());
+            if (dim != null && !dim.isBlank() && !"Loading...".equalsIgnoreCase(dim) && !"Unknown".equalsIgnoreCase(dim)) {
+                updateDimensionSlots(inv, dimensionSlots, dim);
+                try { viewer.updateInventory(); } catch (Throwable ignored) {}
+                return;
             }
-        }.runTaskTimer(plugin, 2L, 2L);
+
+            if (nextTries >= 20) {
+                updateDimensionSlots(inv, dimensionSlots, "Unknown");
+                try { viewer.updateInventory(); } catch (Throwable ignored) {}
+                return;
+            }
+
+            scheduleDimensionRefresh0(viewer, inv, senderName, dimensionSlots, nextTries);
+        });
     }
 
     private void scheduleHeadRefresh(Player viewer, Inventory inv, String senderName, List<Integer> headSlots) {
-        new BukkitRunnable() {
-            int tries = 0;
+        scheduleHeadRefresh0(viewer, inv, senderName, headSlots, 0);
+    }
 
-            @Override
-            public void run() {
-                tries++;
+    private void scheduleHeadRefresh0(Player viewer, Inventory inv, String senderName, List<Integer> headSlots, int tries) {
+        Sched.later(viewer, 2L, () -> {
+            int nextTries = tries + 1;
 
-                if (viewer == null || !viewer.isOnline()) { cancel(); return; }
-                if (viewer.getOpenInventory() == null || viewer.getOpenInventory().getTopInventory() != inv) { cancel(); return; }
+            if (!stillViewing(viewer, inv)) return;
 
-                PendingRequests.Skin skin = PendingRequests.getSkin(viewer.getUniqueId(), senderName);
-                if (skin != null && skin.value() != null && !skin.value().isBlank()) {
-                    for (Integer slot : headSlots) {
-                        if (slot == null) continue;
-                        if (slot < 0 || slot >= inv.getSize()) continue;
+            PendingRequests.Skin skin = PendingRequests.getSkin(viewer.getUniqueId(), senderName);
+            if (skin != null && skin.value() != null && !skin.value().isBlank()) {
+                for (Integer slot : headSlots) {
+                    if (slot == null) continue;
+                    if (slot < 0 || slot >= inv.getSize()) continue;
 
-                        ItemStack it = inv.getItem(slot);
-                        if (it == null || it.getType() != Material.PLAYER_HEAD) continue;
+                    ItemStack it = inv.getItem(slot);
+                    if (it == null || it.getType() != Material.PLAYER_HEAD) continue;
 
-                        ItemMeta im = it.getItemMeta();
-                        if (!(im instanceof SkullMeta)) continue;
+                    ItemMeta im = it.getItemMeta();
+                    if (!(im instanceof SkullMeta)) continue;
 
-                        ItemStack clone = it.clone();
-                        SkullMeta meta = (SkullMeta) clone.getItemMeta();
-                        if (meta == null) continue;
+                    ItemStack clone = it.clone();
+                    SkullMeta meta = (SkullMeta) clone.getItemMeta();
+                    if (meta == null) continue;
 
-                        boolean ok = applyTexturesToSkull(meta, senderName, skin.value(), skin.signature());
-                        if (config.debug()) {
-                            plugin.getLogger().info("applyTexturesToSkull(slot=" + slot + ", owner=" + senderName + ") ok=" + ok
-                                    + " valueLen=" + skin.value().length());
-                        }
-
-                        if (ok) {
-                            clone.setItemMeta(meta);
-                            inv.setItem(slot, clone);
-                        }
+                    boolean ok = applyTexturesToSkull(meta, senderName, skin.value(), skin.signature());
+                    if (config.debug()) {
+                        plugin.getLogger().info("applyTexturesToSkull(slot=" + slot + ", owner=" + senderName + ") ok=" + ok
+                                + " valueLen=" + skin.value().length());
                     }
 
-                    try { viewer.updateInventory(); } catch (Throwable ignored) {}
-                    cancel();
-                    return;
+                    if (ok) {
+                        clone.setItemMeta(meta);
+                        inv.setItem(slot, clone);
+                    }
                 }
 
-                if (tries >= 20) cancel();
+                try { viewer.updateInventory(); } catch (Throwable ignored) {}
+                return;
             }
-        }.runTaskTimer(plugin, 2L, 2L);
+
+            if (nextTries >= 20) return;
+
+            scheduleHeadRefresh0(viewer, inv, senderName, headSlots, nextTries);
+        });
     }
 
     private void updateDimensionSlots(Inventory inv, List<Integer> slots, String dimensionValue) {
@@ -518,7 +527,7 @@ public final class ConfirmRequestMenu implements Listener {
 
         // IMPORTANT: don't remove the pending request until AFTER the command runs,
         // otherwise /tpdeny <name> can fail to match on some setups.
-        Bukkit.getScheduler().runTask(plugin, () -> {
+        Sched.run(p, () -> {
             try {
                 Bukkit.dispatchCommand(p, "huskhomes:tpdeny " + senderFinal);
             } finally {
@@ -677,7 +686,8 @@ public final class ConfirmRequestMenu implements Listener {
 
         PendingRequests.bypassForMs(p.getUniqueId(), 1200);
 
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+        // ✅ Folia-safe: 1 tick later on player's thread
+        Sched.later(p, 1L, () -> {
             if (doAccept) runAccept(p, sender, type);
             else runDeny(p, sender, type);
 
@@ -690,7 +700,7 @@ public final class ConfirmRequestMenu implements Listener {
             sessions.remove(p.getUniqueId());
 
             if (close) p.closeInventory();
-        }, 1L);
+        });
     }
 
     private boolean dispatchFirstSuccessful(Player p, String... cmdsNoSlash) {

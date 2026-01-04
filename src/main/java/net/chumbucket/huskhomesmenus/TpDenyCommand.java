@@ -42,32 +42,51 @@ public final class TpDenyCommand implements CommandExecutor {
             return true;
         }
 
-        if (args.length > 1) {
+        // Folia-safe: run command logic on the correct scheduler for this player
+        Sched.run(p, () -> handle(p, args));
+        return true;
+    }
+
+    private void handle(Player p, String[] args) {
+        if (args != null && args.length > 1) {
             p.sendMessage(AMP.deserialize("&eUsage: /tpdeny [player]"));
-            return true;
+            return;
         }
 
         // If menu is OFF, delegate to HuskHomes directly
-        if (toggles != null && !toggles.isTpMenuOn(p)) {
-            // safety: prevent intercept/loop if anything else tries to catch the forwarded command
-            PendingRequests.bypassForMs(p.getUniqueId(), 1500L);
+        if (toggles != null) {
+            boolean tpMenuOn = true;
+            try { tpMenuOn = toggles.isTpMenuOn(p); } catch (Throwable ignored) { }
+            if (!tpMenuOn) {
+                // safety: prevent intercept/loop if anything else tries to catch the forwarded command
+                PendingRequests.bypassForMs(p.getUniqueId(), 1500L);
 
-            String command = (args.length == 1)
-                    ? "huskhomes:tpdeny " + args[0]
-                    : "huskhomes:tpdeny";
+                String command;
+                if (args != null && args.length == 1 && args[0] != null && !args[0].isBlank()) {
+                    command = "huskhomes:tpdeny " + args[0].trim();
+                } else {
+                    command = "huskhomes:tpdeny";
+                }
 
-            boolean handled = Bukkit.dispatchCommand(p, command);
-            if (!handled) {
-                p.sendMessage(AMP.deserialize("&cFailed to run HuskHomes /tpdeny (huskhomes:tpdeny)."));
+                boolean handled;
+                try {
+                    handled = Bukkit.dispatchCommand(p, command);
+                } catch (Throwable t) {
+                    handled = false;
+                }
+
+                if (!handled) {
+                    p.sendMessage(AMP.deserialize("&cFailed to run HuskHomes /tpdeny (huskhomes:tpdeny)."));
+                }
+                return;
             }
-            return true;
         }
 
         // Menu is ON -> open our confirm menu so they can click Deny
 
         // If /tpdeny <name>, prefer that request type/casing if we have it
-        if (args.length == 1) {
-            String requester = args[0];
+        if (args != null && args.length == 1 && args[0] != null && !args[0].isBlank()) {
+            String requester = args[0].trim();
 
             ConfirmRequestMenu.RequestType type = ConfirmRequestMenu.RequestType.TPA; // fallback
             PendingRequests.Pending byName = PendingRequests.get(p.getUniqueId(), requester);
@@ -77,17 +96,16 @@ public final class TpDenyCommand implements CommandExecutor {
             }
 
             menu.open(p, requester, type);
-            return true;
+            return;
         }
 
         // Otherwise use last remembered request
         PendingRequests.Pending pending = PendingRequests.get(p.getUniqueId());
         if (pending == null) {
             p.sendMessage(AMP.deserialize("&cYou have no pending teleport requests."));
-            return true;
+            return;
         }
 
         menu.open(p, pending.senderName(), pending.type());
-        return true;
     }
 }

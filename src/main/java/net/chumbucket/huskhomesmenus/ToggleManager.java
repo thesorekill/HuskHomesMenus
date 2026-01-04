@@ -16,6 +16,10 @@ import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
 public final class ToggleManager {
 
     private final NamespacedKey keyTpa;
@@ -30,11 +34,22 @@ public final class ToggleManager {
     // ✅ toggle for whether to use the Warps GUI intercept (default ON)
     private final NamespacedKey keyWarpMenu;
 
+    // ------------------------------------------------------------
+    // ✅ Folia-safe cache (avoid touching PDC off-region-thread)
+    // ------------------------------------------------------------
+    private final Map<UUID, State> cache = new ConcurrentHashMap<>();
+
+    private static final class State {
+        volatile boolean tpa = true;
+        volatile boolean tpahere = true;
+        volatile boolean tpmenu = true;
+        volatile boolean tpauto = false;
+        volatile boolean homemenu = true;
+        volatile boolean warpmenu = true;
+    }
+
     public ToggleManager(JavaPlugin plugin) {
-        // ultra-safe: plugin should never be null, but avoid NPE if something calls this wrong
-        if (plugin == null) {
-            throw new IllegalArgumentException("plugin cannot be null");
-        }
+        if (plugin == null) throw new IllegalArgumentException("plugin cannot be null");
 
         this.keyTpa = new NamespacedKey(plugin, "tpa_on");
         this.keyTpahere = new NamespacedKey(plugin, "tpahere_on");
@@ -45,109 +60,193 @@ public final class ToggleManager {
     }
 
     // -------------------------
-    // Reads
+    // Reads (cache-first)
     // -------------------------
 
     public boolean isTpaOn(Player p) {
-        return getFlag(p, keyTpa, true);
+        State s = state(p);
+        if (s == null) return true;
+        refreshAsync(p);
+        return s.tpa;
     }
 
     public boolean isTpahereOn(Player p) {
-        return getFlag(p, keyTpahere, true);
+        State s = state(p);
+        if (s == null) return true;
+        refreshAsync(p);
+        return s.tpahere;
     }
 
     public boolean isTpMenuOn(Player p) {
-        return getFlag(p, keyTpMenu, true);
+        State s = state(p);
+        if (s == null) return true;
+        refreshAsync(p);
+        return s.tpmenu;
     }
 
     public boolean isTpAutoOn(Player p) {
-        return getFlag(p, keyTpAuto, false);
+        State s = state(p);
+        if (s == null) return false;
+        refreshAsync(p);
+        return s.tpauto;
     }
 
     public boolean isHomeMenuOn(Player p) {
-        return getFlag(p, keyHomeMenu, true);
+        State s = state(p);
+        if (s == null) return true;
+        refreshAsync(p);
+        return s.homemenu;
     }
 
     public boolean isWarpMenuOn(Player p) {
-        return getFlag(p, keyWarpMenu, true);
+        State s = state(p);
+        if (s == null) return true;
+        refreshAsync(p);
+        return s.warpmenu;
     }
 
     // -------------------------
-    // Toggles
+    // Toggles (writes on player scheduler)
     // -------------------------
 
     public boolean toggleTpa(Player p) {
-        boolean now = !isTpaOn(p);
-        setFlag(p, keyTpa, now);
+        State s = stateEnsure(p);
+        boolean now = !s.tpa;
+        s.tpa = now;
+        writeAsync(p, keyTpa, now);
         return now;
     }
 
     public boolean toggleTpahere(Player p) {
-        boolean now = !isTpahereOn(p);
-        setFlag(p, keyTpahere, now);
+        State s = stateEnsure(p);
+        boolean now = !s.tpahere;
+        s.tpahere = now;
+        writeAsync(p, keyTpahere, now);
         return now;
     }
 
     public boolean toggleTpMenu(Player p) {
-        boolean now = !isTpMenuOn(p);
-        setFlag(p, keyTpMenu, now);
+        State s = stateEnsure(p);
+        boolean now = !s.tpmenu;
+        s.tpmenu = now;
+        writeAsync(p, keyTpMenu, now);
         return now;
     }
 
     public boolean toggleTpAuto(Player p) {
-        boolean now = !isTpAutoOn(p);
-        setFlag(p, keyTpAuto, now);
+        State s = stateEnsure(p);
+        boolean now = !s.tpauto;
+        s.tpauto = now;
+        writeAsync(p, keyTpAuto, now);
         return now;
     }
 
     public boolean toggleHomeMenu(Player p) {
-        boolean now = !isHomeMenuOn(p);
-        setFlag(p, keyHomeMenu, now);
+        State s = stateEnsure(p);
+        boolean now = !s.homemenu;
+        s.homemenu = now;
+        writeAsync(p, keyHomeMenu, now);
         return now;
     }
 
     public boolean toggleWarpMenu(Player p) {
-        boolean now = !isWarpMenuOn(p);
-        setFlag(p, keyWarpMenu, now);
+        State s = stateEnsure(p);
+        boolean now = !s.warpmenu;
+        s.warpmenu = now;
+        writeAsync(p, keyWarpMenu, now);
         return now;
     }
 
     // -------------------------
-    // Setters
+    // Setters (writes on player scheduler)
     // -------------------------
 
     public void setTpMenuOn(Player p, boolean on) {
-        setFlag(p, keyTpMenu, on);
+        State s = stateEnsure(p);
+        s.tpmenu = on;
+        writeAsync(p, keyTpMenu, on);
     }
 
     public void setTpAutoOn(Player p, boolean on) {
-        setFlag(p, keyTpAuto, on);
+        State s = stateEnsure(p);
+        s.tpauto = on;
+        writeAsync(p, keyTpAuto, on);
     }
 
     public void setHomeMenuOn(Player p, boolean on) {
-        setFlag(p, keyHomeMenu, on);
+        State s = stateEnsure(p);
+        s.homemenu = on;
+        writeAsync(p, keyHomeMenu, on);
     }
 
     public void setWarpMenuOn(Player p, boolean on) {
-        setFlag(p, keyWarpMenu, on);
+        State s = stateEnsure(p);
+        s.warpmenu = on;
+        writeAsync(p, keyWarpMenu, on);
+    }
+
+    // -------------------------
+    // Optional: cleanup hooks
+    // -------------------------
+
+    public void forget(Player p) {
+        if (p == null) return;
+        cache.remove(p.getUniqueId());
     }
 
     // -------------------------
     // Internal helpers
     // -------------------------
 
-    private boolean getFlag(Player p, NamespacedKey key, boolean defaultValue) {
-        if (p == null || key == null) return defaultValue;
-
-        final PersistentDataContainer pdc = p.getPersistentDataContainer();
-        final Byte stored = pdc.get(key, PersistentDataType.BYTE);
-
-        if (stored == null) return defaultValue;
-        return stored == (byte) 1;
+    private State state(Player p) {
+        if (p == null) return null;
+        return cache.get(p.getUniqueId());
     }
 
-    private void setFlag(Player p, NamespacedKey key, boolean value) {
+    private State stateEnsure(Player p) {
+        if (p == null) return new State();
+        return cache.computeIfAbsent(p.getUniqueId(), u -> new State());
+    }
+
+    /**
+     * Refresh cached values from PDC on the correct thread.
+     * Safe to call frequently; it's just a scheduled read.
+     */
+    private void refreshAsync(Player p) {
+        if (p == null) return;
+
+        // Folia-safe: run on the player's scheduler (or main thread on non-Folia)
+        Sched.run(p, () -> {
+            State s = stateEnsure(p);
+            s.tpa = readFlag(p, keyTpa, true);
+            s.tpahere = readFlag(p, keyTpahere, true);
+            s.tpmenu = readFlag(p, keyTpMenu, true);
+            s.tpauto = readFlag(p, keyTpAuto, false);
+            s.homemenu = readFlag(p, keyHomeMenu, true);
+            s.warpmenu = readFlag(p, keyWarpMenu, true);
+        });
+    }
+
+    private void writeAsync(Player p, NamespacedKey key, boolean value) {
         if (p == null || key == null) return;
-        p.getPersistentDataContainer().set(key, PersistentDataType.BYTE, value ? (byte) 1 : (byte) 0);
+        Sched.run(p, () -> writeFlag(p, key, value));
+    }
+
+    private boolean readFlag(Player p, NamespacedKey key, boolean defaultValue) {
+        try {
+            PersistentDataContainer pdc = p.getPersistentDataContainer();
+            Byte stored = pdc.get(key, PersistentDataType.BYTE);
+            if (stored == null) return defaultValue;
+            return stored == (byte) 1;
+        } catch (Throwable ignored) {
+            return defaultValue;
+        }
+    }
+
+    private void writeFlag(Player p, NamespacedKey key, boolean value) {
+        try {
+            p.getPersistentDataContainer().set(key, PersistentDataType.BYTE, value ? (byte) 1 : (byte) 0);
+        } catch (Throwable ignored) {
+        }
     }
 }

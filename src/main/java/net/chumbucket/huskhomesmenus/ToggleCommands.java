@@ -41,41 +41,41 @@ public final class ToggleCommands implements CommandExecutor {
             return true; // do nothing, but don't error
         }
 
+        // Folia-safe: run the toggle + messaging on the player's scheduler
+        Sched.run(p, () -> handle(p, command));
+        return true;
+    }
+
+    private void handle(Player p, Command command) {
         final String name = command.getName().toLowerCase();
 
         switch (name) {
             case "tpatoggle" -> {
                 boolean on = toggles.toggleTpa(p);
                 sendToggleStatus(p, true, on);
-                return true;
             }
             case "tpaheretoggle" -> {
                 boolean on = toggles.toggleTpahere(p);
                 sendToggleStatus(p, false, on);
-                return true;
             }
             case "tpmenu" -> {
                 boolean on = toggles.toggleTpMenu(p);
                 sendTpMenuStatus(p, on);
-                return true;
             }
             case "tpauto" -> {
                 boolean on = toggles.toggleTpAuto(p);
                 sendTpAutoStatus(p, on);
-                return true;
             }
             case "homemenu" -> {
                 boolean on = toggles.toggleHomeMenu(p);
                 sendHomeMenuStatus(p, on);
-                return true;
             }
             case "warpmenu" -> {
                 boolean on = toggles.toggleWarpMenu(p);
                 sendWarpMenuStatus(p, on);
-                return true;
             }
             default -> {
-                return false;
+                // Unknown executor binding; ignore.
             }
         }
     }

@@ -43,12 +43,8 @@ public final class HomesTabCompleter implements TabCompleter {
         if (!(sender instanceof Player p)) return List.of();
 
         // Only complete the FIRST argument: /home <name>
-        // (If HuskHomes supports more args, we don't interfere.)
         if (args.length != 1) return List.of();
 
-        // If HomesMenu is ON and player typed /home with no args,
-        // your command opens GUI. But tab completion is only relevant when args[0] exists.
-        // Still: we always provide home-name suggestions.
         String prefix = args[0] == null ? "" : args[0].toLowerCase(Locale.ROOT);
 
         // Trigger async refresh if stale
@@ -62,6 +58,7 @@ public final class HomesTabCompleter implements TabCompleter {
 
         List<String> filtered = new ArrayList<>();
         for (String h : homes) {
+            if (h == null) continue;
             if (h.toLowerCase(Locale.ROOT).startsWith(prefix)) filtered.add(h);
         }
         return filtered;
@@ -73,6 +70,14 @@ public final class HomesTabCompleter implements TabCompleter {
         return e.homes;
     }
 
+    /**
+     * Folia-safe:
+     * - We do NOT touch Bukkit API in async callbacks beyond pure data extraction.
+     * - We only use HuskHomes API futures + our own concurrent cache.
+     *
+     * Note: adaptUser(Player) is called on the calling thread (command thread);
+     * on Folia this is already region-safe. We avoid scheduling back to Bukkit main.
+     */
     private void warmCacheAsync(Player p) {
         UUID uuid = p.getUniqueId();
 
@@ -80,14 +85,14 @@ public final class HomesTabCompleter implements TabCompleter {
         long now = System.currentTimeMillis();
         if (existing != null && (now - existing.timeMs) <= CACHE_MS) return;
 
-        HuskHomesAPI api;
+        final HuskHomesAPI api;
         try {
             api = HuskHomesAPI.getInstance();
         } catch (Throwable t) {
             return;
         }
 
-        OnlineUser user;
+        final OnlineUser user;
         try {
             user = api.adaptUser(p);
         } catch (Throwable t) {
@@ -95,11 +100,24 @@ public final class HomesTabCompleter implements TabCompleter {
         }
 
         api.getUserHomes(user).thenAccept(list -> {
+            // If player logged out, we can still safely cache names (or skip).
+            // We'll skip to avoid holding stale per-player data.
+            try {
+                if (!p.isOnline()) return;
+            } catch (Throwable ignored) {}
+
             List<String> names = new ArrayList<>();
             if (list != null) {
                 for (Home h : list) {
                     if (h == null) continue;
-                    String n = h.getName();
+
+                    String n;
+                    try {
+                        n = h.getName();
+                    } catch (Throwable ignored) {
+                        continue;
+                    }
+
                     if (n == null) continue;
                     n = n.trim();
                     if (!n.isBlank()) names.add(n);

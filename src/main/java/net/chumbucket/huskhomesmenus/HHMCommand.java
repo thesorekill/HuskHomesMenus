@@ -10,12 +10,11 @@
 
 package net.chumbucket.huskhomesmenus;
 
-import org.bukkit.Bukkit;
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
-
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import org.bukkit.entity.Player;
 
 public final class HHMCommand implements CommandExecutor {
 
@@ -50,7 +49,7 @@ public final class HHMCommand implements CommandExecutor {
             return true;
         }
 
-        // ✅ /hhm version
+        // /hhm version
         if (args.length == 1 && args[0].equalsIgnoreCase("version")) {
             if (!sender.hasPermission("huskhomesmenus.admin")) {
                 sender.sendMessage(
@@ -82,7 +81,8 @@ public final class HHMCommand implements CommandExecutor {
                             .append(AMP.deserialize("&7Checking for updates..."))
             );
 
-            checker.checkNowAsync().thenAccept(result -> Bukkit.getScheduler().runTask(plugin, () -> {
+            // ✅ Folia/Paper/Spigot safe: hop back via Sched (player scheduler if player, global otherwise)
+            checker.checkNowAsync().thenAccept(result -> runToSender(sender, () -> {
                 if (result == null) {
                     sender.sendMessage(
                             AMP.deserialize(config.prefix())
@@ -126,7 +126,14 @@ public final class HHMCommand implements CommandExecutor {
                         );
                     }
                 }
-            }));
+            })).exceptionally(ex -> {
+                runToSender(sender, () -> sender.sendMessage(
+                        AMP.deserialize(config.prefix())
+                                .append(AMP.deserialize("&cCould not check for updates."))
+                ));
+                if (config.debug()) ex.printStackTrace();
+                return null;
+            });
 
             return true;
         }
@@ -136,6 +143,15 @@ public final class HHMCommand implements CommandExecutor {
                         .append(AMP.deserialize("&eUsage: /hhm reload &7| &e/hhm version"))
         );
         return true;
+    }
+
+    private static void runToSender(CommandSender sender, Runnable task) {
+        if (task == null) return;
+        if (sender instanceof Player p) {
+            Sched.run(p, task);
+        } else {
+            Sched.run(task);
+        }
     }
 
     private static String safe(String s) {

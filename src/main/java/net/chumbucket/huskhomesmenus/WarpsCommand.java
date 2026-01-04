@@ -40,7 +40,9 @@ public final class WarpsCommand implements CommandExecutor {
             return true;
         }
 
-        final String cmdName = command.getName().toLowerCase(Locale.ROOT); // "warp" or "warps"
+        final String cmdName = (command == null || command.getName() == null)
+                ? "warps"
+                : command.getName().toLowerCase(Locale.ROOT); // "warp" or "warps"
 
         // ✅ HuskHomes command permissions (NOT huskhomesmenus.*)
         final boolean canWarp = p.hasPermission("huskhomes.command.warp");
@@ -66,7 +68,7 @@ public final class WarpsCommand implements CommandExecutor {
         final boolean toggleOn = (toggles == null) || toggles.isWarpMenuOn(p);
         final boolean canOpenGui = menuEnabled && toggleOn && (warpsMenu != null);
 
-        // ✅ If GUI is ON -> open it (NO huskhomes.command.* checks here)
+        // ✅ If GUI is ON -> open it
         if (canOpenGui) {
             warpsMenu.open(p);
             return true;
@@ -82,7 +84,6 @@ public final class WarpsCommand implements CommandExecutor {
             return true;
         }
 
-        // Forward to HuskHomes
         forwardToHuskHomes(p, cmdName, args);
         return true;
     }
@@ -106,37 +107,42 @@ public final class WarpsCommand implements CommandExecutor {
             }
         }
 
-        boolean ok;
-        try {
-            ok = Bukkit.dispatchCommand(p, sb.toString());
-        } catch (Throwable t) {
-            ok = false;
-        }
+        final String namespaced = sb.toString();
 
-        // If HuskHomes namespace command isn't available, try plain command as a fallback
-        if (!ok) {
+        // ✅ For Folia compatibility, dispatch on the player's region thread
+        Sched.run(p, () -> {
+            boolean ok;
             try {
-                StringBuilder plain = new StringBuilder();
-                plain.append(cmdName);
-
-                if (args != null && args.length > 0) {
-                    for (String a : args) {
-                        if (a == null || a.isBlank()) continue;
-                        plain.append(' ').append(a);
-                    }
-                }
-
-                ok = Bukkit.dispatchCommand(p, plain.toString());
-            } catch (Throwable ignored) {
+                ok = Bukkit.dispatchCommand(p, namespaced);
+            } catch (Throwable t) {
                 ok = false;
             }
-        }
 
-        if (!ok) {
-            String msg = (config != null)
-                    ? config.msgWithPrefix("messages.warps.error", "&cCould not forward to HuskHomes warp command.")
-                    : "&cCould not forward to HuskHomes warp command.";
-            p.sendMessage(AMP.deserialize(msg));
-        }
+            // Fallback: try plain command if namespaced isn't available
+            if (!ok) {
+                try {
+                    StringBuilder plain = new StringBuilder();
+                    plain.append(cmdName);
+
+                    if (args != null && args.length > 0) {
+                        for (String a : args) {
+                            if (a == null || a.isBlank()) continue;
+                            plain.append(' ').append(a);
+                        }
+                    }
+
+                    ok = Bukkit.dispatchCommand(p, plain.toString());
+                } catch (Throwable ignored) {
+                    ok = false;
+                }
+            }
+
+            if (!ok) {
+                String msg = (config != null)
+                        ? config.msgWithPrefix("messages.warps.error", "&cCould not forward to HuskHomes warp command.")
+                        : "&cCould not forward to HuskHomes warp command.";
+                p.sendMessage(AMP.deserialize(msg));
+            }
+        });
     }
 }

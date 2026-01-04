@@ -32,7 +32,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
 
     private final JavaPlugin plugin;
     private final HHMConfig config;
-    private boolean enabled = false;
+    private volatile boolean enabled = false;
 
     // One-shot GetServers callbacks
     private final List<Consumer<List<String>>> getServersCallbacks = Collections.synchronizedList(new ArrayList<>());
@@ -42,29 +42,6 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
 
     // One-shot PlayerList ALL callback(s)
     private final List<Consumer<List<String>>> playerListAllCallbacks = Collections.synchronizedList(new ArrayList<>());
-
-    // Reload command
-    public void disable() {
-        if (!enabled) return;
-
-        try {
-            plugin.getServer().getMessenger().unregisterIncomingPluginChannel(plugin, CHANNEL_MODERN, this);
-        } catch (Throwable ignored) { }
-
-        try {
-            plugin.getServer().getMessenger().unregisterIncomingPluginChannel(plugin, CHANNEL_LEGACY, this);
-        } catch (Throwable ignored) { }
-
-        try {
-            plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin, CHANNEL_MODERN);
-        } catch (Throwable ignored) { }
-
-        try {
-            plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin, CHANNEL_LEGACY);
-        } catch (Throwable ignored) { }
-
-        enabled = false;
-    }
 
     // =========================================================
     // ✅ Dimension response sink
@@ -147,6 +124,81 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
         }
     }
 
+    // Reload command
+    public void disable() {
+        if (!enabled) return;
+
+        try {
+            plugin.getServer().getMessenger().unregisterIncomingPluginChannel(plugin, CHANNEL_MODERN, this);
+        } catch (Throwable ignored) { }
+
+        try {
+            plugin.getServer().getMessenger().unregisterIncomingPluginChannel(plugin, CHANNEL_LEGACY, this);
+        } catch (Throwable ignored) { }
+
+        try {
+            plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin, CHANNEL_MODERN);
+        } catch (Throwable ignored) { }
+
+        try {
+            plugin.getServer().getMessenger().unregisterOutgoingPluginChannel(plugin, CHANNEL_LEGACY);
+        } catch (Throwable ignored) { }
+
+        enabled = false;
+    }
+
+    // =========================================================
+    // ✅ Folia-safe send helper
+    // =========================================================
+
+    /**
+     * On Folia, sending a plugin message via a Player must occur on that player's region thread.
+     * On Paper/Spigot, it must occur on the main thread.
+     *
+     * We use Sched.run(carrier, ...) so this file stays cross-platform.
+     *
+     * Returns true if we *queued* the send successfully (best-effort).
+     */
+    private boolean sendPayload(Player carrier, byte[] payload) {
+        if (!enabled) return false;
+        if (carrier == null) return false;
+
+        final byte[] data = (payload == null) ? new byte[0] : payload;
+
+        try {
+            Sched.run(carrier, () -> {
+                try {
+                    if (!enabled) return;
+                    if (!carrier.isOnline()) return;
+
+                    carrier.sendPluginMessage(plugin, CHANNEL_MODERN, data);
+                    carrier.sendPluginMessage(plugin, CHANNEL_LEGACY, data);
+                } catch (Throwable t) {
+                    if (config.debug()) {
+                        plugin.getLogger().warning("Proxy sendPayload failed: " + t.getClass().getSimpleName() + ": " + t.getMessage());
+                    }
+                }
+            });
+
+            // ✅ queued successfully
+            return true;
+        } catch (Throwable t) {
+            if (config.debug()) {
+                plugin.getLogger().warning("Proxy sendPayload queue failed: " + t.getClass().getSimpleName() + ": " + t.getMessage());
+            }
+            return false;
+        }
+    }
+
+    private Player anyOnlinePlayer() {
+        try {
+            for (Player p : Bukkit.getOnlinePlayers()) {
+                if (p != null && p.isOnline()) return p;
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
     // =========================================================
     // Existing API
     // =========================================================
@@ -160,9 +212,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
             if (carrier == null) return false;
 
             byte[] payload = buildMessagePacket(playerName, message);
-            carrier.sendPluginMessage(plugin, CHANNEL_MODERN, payload);
-            carrier.sendPluginMessage(plugin, CHANNEL_LEGACY, payload);
-            return true;
+            return sendPayload(carrier, payload);
         } catch (Throwable t) {
             plugin.getLogger().warning("Failed to proxy-message '" + playerName + "': " + t.getMessage());
             return false;
@@ -184,9 +234,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
             if (carrier == null) return false;
 
             byte[] forward = buildForwardToPlayerPacket(targetPlayerName, subchannel, data);
-            carrier.sendPluginMessage(plugin, CHANNEL_MODERN, forward);
-            carrier.sendPluginMessage(plugin, CHANNEL_LEGACY, forward);
-            return true;
+            return sendPayload(carrier, forward);
         } catch (Throwable t) {
             plugin.getLogger().warning("Failed to proxy-forward to '" + targetPlayerName + "': " + t.getMessage());
             return false;
@@ -255,9 +303,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
             if (carrier == null) return false;
 
             byte[] payload = buildGetServersPacket();
-            carrier.sendPluginMessage(plugin, CHANNEL_MODERN, payload);
-            carrier.sendPluginMessage(plugin, CHANNEL_LEGACY, payload);
-            return true;
+            return sendPayload(carrier, payload);
         } catch (Throwable t) {
             plugin.getLogger().warning("Failed to request proxy servers: " + t.getMessage());
             return false;
@@ -277,9 +323,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
             }
 
             byte[] payload = buildPlayerListPacket(server);
-            carrier.sendPluginMessage(plugin, CHANNEL_MODERN, payload);
-            carrier.sendPluginMessage(plugin, CHANNEL_LEGACY, payload);
-            return true;
+            return sendPayload(carrier, payload);
         } catch (Throwable t) {
             plugin.getLogger().warning("Failed to request PlayerList for server " + server + ": " + t.getMessage());
             return false;
@@ -295,9 +339,7 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
             if (carrier == null) return false;
 
             byte[] payload = buildPlayerListPacket("ALL");
-            carrier.sendPluginMessage(plugin, CHANNEL_MODERN, payload);
-            carrier.sendPluginMessage(plugin, CHANNEL_LEGACY, payload);
-            return true;
+            return sendPayload(carrier, payload);
         } catch (Throwable t) {
             plugin.getLogger().warning("Failed to request PlayerList ALL: " + t.getMessage());
             return false;
@@ -367,11 +409,6 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
         out.writeUTF("PlayerList");
         out.writeUTF(server);
         return bytes.toByteArray();
-    }
-
-    private Player anyOnlinePlayer() {
-        for (Player p : Bukkit.getOnlinePlayers()) return p;
-        return null;
     }
 
     private String resolveDimension(Player p) {
@@ -512,8 +549,6 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
                     String cmd = din.readUTF();
                     if (cmd == null || cmd.isBlank()) return;
 
-                    // --- your DIM/SKIN logic stays exactly as-is below ---
-                    // (keep the rest of your existing SUBCHANNEL handler unchanged)
                     // =================================================
                     // DIM
                     // =================================================
@@ -551,6 +586,9 @@ public final class OptionalProxyMessenger implements PluginMessageListener {
                         return;
                     }
 
+                    // =================================================
+                    // SKIN
+                    // =================================================
                     if ("SKIN_REQ".equalsIgnoreCase(cmd)) {
                         String requesterName = din.readUTF();
                         if (requesterName == null || requesterName.isBlank()) return;

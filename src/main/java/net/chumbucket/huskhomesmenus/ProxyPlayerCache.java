@@ -10,7 +10,6 @@
 
 package net.chumbucket.huskhomesmenus;
 
-import org.bukkit.Bukkit;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.*;
@@ -50,7 +49,8 @@ public final class ProxyPlayerCache {
     }
 
     public void start() {
-        Bukkit.getScheduler().runTaskLater(plugin, this::refreshAsyncish, 20L);
+        // ✅ Folia/Paper/Spigot safe scheduling
+        Sched.later(20L, this::refreshAsyncish);
     }
 
     public List<String> getCached() {
@@ -167,48 +167,55 @@ public final class ProxyPlayerCache {
         if (!refreshInFlight.compareAndSet(false, true)) return;
 
         boolean sent = messenger.requestProxyServers(servers -> {
-            try {
-                if (servers == null || servers.isEmpty()) {
-                    refreshInFlight.set(false);
-                    return;
-                }
-
-                Set<String> addrs = new LinkedHashSet<>();
-                Map<String, String> map = new HashMap<>();
-
-                Runnable next = new Runnable() {
-                    private int i = 0;
-
-                    @Override
-                    public void run() {
-                        if (i >= servers.size()) {
-                            cached = new ArrayList<>(addrs);
-                            playerToServer.clear();
-                            playerToServer.putAll(map);
-                            lastRefreshMs = System.currentTimeMillis();
-                            refreshInFlight.set(false);
-                            return;
-                        }
-
-                        String srv = servers.get(i++);
-                        messenger.requestPlayerListForServer(srv, (server, names) -> Bukkit.getScheduler().runTask(plugin, () -> {
-                            if (names != null) {
-                                for (String name : names) {
-                                    if (name == null || name.isBlank()) continue;
-                                    addrs.add(name);
-                                    map.put(normalize(name), srv);
-                                }
-                            }
-                            Bukkit.getScheduler().runTask(plugin, this);
-                        }));
+            // Callbacks may arrive off-thread depending on platform; push work onto scheduler.
+            Sched.run(() -> {
+                try {
+                    if (servers == null || servers.isEmpty()) {
+                        refreshInFlight.set(false);
+                        return;
                     }
-                };
 
-                Bukkit.getScheduler().runTask(plugin, next);
+                    Set<String> addrs = new LinkedHashSet<>();
+                    Map<String, String> map = new HashMap<>();
 
-            } catch (Throwable t) {
-                refreshInFlight.set(false);
-            }
+                    Runnable next = new Runnable() {
+                        private int i = 0;
+
+                        @Override
+                        public void run() {
+                            if (i >= servers.size()) {
+                                cached = new ArrayList<>(addrs);
+                                playerToServer.clear();
+                                playerToServer.putAll(map);
+                                lastRefreshMs = System.currentTimeMillis();
+                                refreshInFlight.set(false);
+                                return;
+                            }
+
+                            String srv = servers.get(i++);
+                            messenger.requestPlayerListForServer(srv, (server, names) -> {
+                                // Ensure mutation occurs on scheduler (Folia-safe)
+                                Sched.run(() -> {
+                                    if (names != null) {
+                                        for (String name : names) {
+                                            if (name == null || name.isBlank()) continue;
+                                            addrs.add(name);
+                                            map.put(normalize(name), srv);
+                                        }
+                                    }
+                                    // Continue the chain
+                                    Sched.run(this);
+                                });
+                            });
+                        }
+                    };
+
+                    Sched.run(next);
+
+                } catch (Throwable t) {
+                    refreshInFlight.set(false);
+                }
+            });
         });
 
         if (!sent) {

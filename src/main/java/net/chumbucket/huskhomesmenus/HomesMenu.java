@@ -144,17 +144,7 @@ public final class HomesMenu implements Listener {
 
     // ---------------------------------------------------------------------
     // ✅ Click command runner (PLAYER + CONSOLE)
-    //
-    // Supports layouts:
-    // 1) <section>.click.player_commands / <section>.click.console_commands
-    // 2) <section>.player_commands / <section>.console_commands
-    // 3) direct list path: <path> (rare)  -> (player_commands/console_commands only via section)
-    //
-    // Placeholders supported (you already use these):
-    // %player% %home% %home_name% %page% %pages% %max_homes% %prev_page% %next_page%
-    // %home_world% %home_server% %home_dimension% %home_x% %home_y% %home_z% %home_coords%
     // ---------------------------------------------------------------------
-
     private void runClickCommandsFromSection(Player p, ConfigurationSection sec, Map<String, String> ph) {
         if (p == null || sec == null) return;
 
@@ -194,9 +184,7 @@ public final class HomesMenu implements Listener {
                 continue;
             }
 
-            // We do NOT guess console/player intent from a raw string list at arbitrary path;
-            // keep the old behavior: only allow direct lists if they are explicitly "player-like"
-            // (and you already used this rarely).
+            // Keep legacy behavior: direct list implies player commands.
             List<String> list = plugin.getConfig().getStringList(path);
             if (list != null && !list.isEmpty()) {
                 dispatchCommandListAsPlayer(p, list, ph);
@@ -402,11 +390,14 @@ public final class HomesMenu implements Listener {
 
         final OnlineUser user = api.adaptUser(player);
 
-        api.getUserHomes(user).thenAccept(homeList -> Bukkit.getScheduler().runTask(plugin, () -> {
-            if (!player.isOnline()) return;
-            buildAndOpen(player, Math.max(0, page), maxHomes, homeList == null ? List.of() : homeList);
-        })).exceptionally(ex -> {
-            Bukkit.getScheduler().runTask(plugin, () -> {
+        api.getUserHomes(user).thenAccept(homeList -> {
+            // hop to correct thread (Folia-safe)
+            Sched.run(player, () -> {
+                if (!player.isOnline()) return;
+                buildAndOpen(player, Math.max(0, page), maxHomes, homeList == null ? List.of() : homeList);
+            });
+        }).exceptionally(ex -> {
+            Sched.run(player, () -> {
                 if (player.isOnline()) {
                     player.sendMessage(AMP.deserialize(config.prefix()).append(AMP.deserialize("&cFailed to load homes.")));
                 }
@@ -598,7 +589,7 @@ public final class HomesMenu implements Listener {
             navPh.put("%max_homes%", String.valueOf(maxHomes));
             navPh.put("%prev_page%", String.valueOf(prevPage));
             navPh.put("%next_page%", String.valueOf(nextPage));
-            navPh.put("%player%", ""); // menu placeholders are config-driven; player placeholder is runtime
+            navPh.put("%player%", "");
 
             int prevSlot = clamp(holder.navPrevSlot(), 0, inv.getSize() - 1);
             int pageSlot = clamp(holder.navPageSlot(), 0, inv.getSize() - 1);
@@ -667,7 +658,7 @@ public final class HomesMenu implements Listener {
     }
 
     // ---------------------------------------------------------------------
-    // ✅ Sign UI: open editor + capture name
+    // ✅ Sign UI: open editor + capture name (Folia-safe)
     // ---------------------------------------------------------------------
 
     private void openHomeNameSign(Player p, int returnPage, int homeNumber) {
@@ -676,76 +667,81 @@ public final class HomesMenu implements Listener {
         // If disabled in config, fallback to numeric name
         if (!createHomeSignEnabled()) {
             doSetHomeApiFirst(p, String.valueOf(homeNumber)).whenComplete((ok, err) ->
-                    Bukkit.getScheduler().runTask(plugin, () -> open(p, Math.max(0, returnPage)))
+                    Sched.run(p, () -> open(p, Math.max(0, returnPage)))
             );
             return;
         }
 
-        // Find an air block near the player (a couple blocks above head)
-        Location base = p.getLocation().clone();
-        Location spot = findSignSpot(base);
-
-        if (spot == null) {
-            p.sendMessage(AMP.deserialize(config.prefix()).append(AMP.deserialize("&cCouldn't open name prompt here.")));
-            return;
-        }
-
-        Block b = spot.getBlock();
-        Material oldType = b.getType();
-        BlockData oldData = b.getBlockData();
-
-        // Place a temporary sign (configurable type)
-        Material signMat = readCreateHomeSignMaterial();
-        try {
-            b.setType(signMat, false);
-        } catch (Throwable t) {
-            p.sendMessage(AMP.deserialize(config.prefix()).append(AMP.deserialize("&cCouldn't place sign.")));
-            return;
-        }
-
-        // Prepare sign text (from config)
-        final String[] lines = readCreateHomeSignLines(p, returnPage, homeNumber);
-
-        try {
-            if (b.getState() instanceof Sign sign) {
-                setSignLinesBestEffort(sign, lines[0], lines[1], lines[2], lines[3]);
-
-                // ✅ push to world/client so editor doesn't open blank
-                try { sign.update(true, false); } catch (Throwable ignored) {}
-
-                // ✅ additionally push preview straight to THIS player (fixes blank editor race)
-                sendSignPreviewToPlayerBestEffort(p, sign.getLocation(), lines);
-            }
-        } catch (Throwable ignored) {}
-
-        // Store session (overwrites any previous)
-        SignSession session = new SignSession(
-                Math.max(0, returnPage),
-                homeNumber,
-                spot.clone(),
-                oldType,
-                oldData
-        );
-        signSessions.put(p.getUniqueId(), session);
-
-        // Timeout cleanup (if player ESC's the sign editor, no event fires)
-        Bukkit.getScheduler().runTaskLater(plugin, () -> cleanupSignSession(p.getUniqueId(), true), 20L * 60L); // 60s
-
-        // ✅ open editor after tiny delay so client has sign text
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+        // Always start from player's thread (Folia player scheduler)
+        Sched.run(p, () -> {
             if (!p.isOnline()) return;
 
-            Block sb = session.signLoc.getBlock();
-            if (!(sb.getState() instanceof Sign sign)) {
-                cleanupSignSession(p.getUniqueId(), true);
+            Location base = p.getLocation().clone();
+            Location spot = findSignSpot(base);
+
+            if (spot == null) {
+                p.sendMessage(AMP.deserialize(config.prefix()).append(AMP.deserialize("&cCouldn't open name prompt here.")));
                 return;
             }
 
-            // one last push for safety
-            sendSignPreviewToPlayerBestEffort(p, sign.getLocation(), lines);
+            final Material signMat = readCreateHomeSignMaterial();
+            final String[] lines = readCreateHomeSignLines(p, returnPage, homeNumber);
 
-            openSignEditorBestEffort(p, sign);
-        }, 2L);
+            // Region-safe: place + edit sign on that location's region thread
+            Sched.runAt(spot, () -> {
+                Block b = spot.getBlock();
+                Material oldType = b.getType();
+                BlockData oldData = b.getBlockData();
+
+                try {
+                    b.setType(signMat, false);
+                } catch (Throwable t) {
+                    Sched.run(p, () ->
+                            p.sendMessage(AMP.deserialize(config.prefix()).append(AMP.deserialize("&cCouldn't place sign.")))
+                    );
+                    return;
+                }
+
+                try {
+                    if (b.getState() instanceof Sign sign) {
+                        setSignLinesBestEffort(sign, lines[0], lines[1], lines[2], lines[3]);
+                        try { sign.update(true, false); } catch (Throwable ignored) {}
+                    }
+                } catch (Throwable ignored) {}
+
+                // Store session after sign exists
+                SignSession session = new SignSession(
+                        Math.max(0, returnPage),
+                        homeNumber,
+                        spot.clone(),
+                        oldType,
+                        oldData
+                );
+                signSessions.put(p.getUniqueId(), session);
+
+                // Timeout cleanup (if player ESC's the sign editor, no event fires)
+                // Use region thread for restore safety
+                Sched.laterAt(session.signLoc, 20L * 60L, () -> cleanupSignSession(p.getUniqueId(), true)); // 60s
+
+                // Open editor after tiny delay so client has sign text
+                Sched.later(p, 2L, () -> {
+                    if (!p.isOnline()) return;
+
+                    // Push preview to THIS player (prevents blank editor race)
+                    sendSignPreviewToPlayerBestEffort(p, session.signLoc, lines);
+
+                    // Grab sign state region-safe, then open editor on player thread
+                    Sched.runAt(session.signLoc, () -> {
+                        Block sb = session.signLoc.getBlock();
+                        if (!(sb.getState() instanceof Sign sign)) {
+                            cleanupSignSession(p.getUniqueId(), true);
+                            return;
+                        }
+                        Sched.run(p, () -> openSignEditorBestEffort(p, sign));
+                    });
+                });
+            });
+        });
     }
 
     private Location findSignSpot(Location playerLoc) {
@@ -777,9 +773,15 @@ public final class HomesMenu implements Listener {
         SignSession session = signSessions.remove(playerId);
         if (session == null) return;
 
-        if (restoreBlock) {
+        if (!restoreBlock) return;
+
+        Location loc = session.signLoc;
+        if (loc == null || loc.getWorld() == null) return;
+
+        // Region-safe restore
+        Sched.runAt(loc, () -> {
             try {
-                Block b = session.signLoc.getBlock();
+                Block b = loc.getBlock();
                 b.setType(session.originalType, false);
                 try {
                     if (session.originalData != null) {
@@ -787,7 +789,7 @@ public final class HomesMenu implements Listener {
                     }
                 } catch (Throwable ignored) {}
             } catch (Throwable ignored) {}
-        }
+        });
     }
 
     // ✅ Writes to FRONT (mirrors BACK when possible) without unchecked Enum warnings
@@ -948,7 +950,7 @@ public final class HomesMenu implements Listener {
         cleanupSignSession(p.getUniqueId(), true);
 
         doSetHomeApiFirst(p, homeName).whenComplete((ok, err) ->
-                Bukkit.getScheduler().runTask(plugin, () -> open(p, returnPage))
+                Sched.run(p, () -> open(p, returnPage))
         );
     }
 
@@ -1178,15 +1180,12 @@ public final class HomesMenu implements Listener {
 
             if (slot == dch.cancelSlot()) {
                 try {
-                    // ✅ player + console commands for cancel
                     runClickCommandsFromPaths(
                             p, ph,
-                            // your config shape: menus.homes.delete_confirm.items.cancel.click.*
                             "menus.homes.delete_confirm.items.cancel.click",
                             "menus.homes.delete_confirm.items.cancel"
                     );
 
-                    // return
                     open(p, dch.returnPage());
                 } finally {
                     endAction(p.getUniqueId());
@@ -1202,7 +1201,6 @@ public final class HomesMenu implements Listener {
 
                 final String deleteName = dch.actualHomeName();
 
-                // ✅ run configured commands on confirm
                 runClickCommandsFromPaths(
                         p, ph,
                         "menus.homes.delete_confirm.items.confirm.click",
@@ -1210,7 +1208,7 @@ public final class HomesMenu implements Listener {
                 );
 
                 doDeleteHomeApiFirst(p, deleteName).whenComplete((ok, err) ->
-                        Bukkit.getScheduler().runTask(plugin, () -> {
+                        Sched.run(p, () -> {
                             try {
                                 open(p, dch.returnPage());
                             } finally {
@@ -1235,7 +1233,6 @@ public final class HomesMenu implements Listener {
         int slot = e.getRawSlot();
         if (slot < 0 || slot >= top.getSize()) return;
 
-        // ✅ IMPORTANT: build nav placeholders ONCE and actually pass player name
         int maxHomesNow = Math.max(1, holder.maxHomes());
         int pagesNow = Math.max(1, (int) Math.ceil(maxHomesNow / (double) holder.perPage()));
         Map<String, String> navPh = new HashMap<>();
@@ -1249,8 +1246,6 @@ public final class HomesMenu implements Listener {
         // Nav
         if (holder.navEnabled()) {
             if (slot == clamp(holder.navCloseSlot(), 0, top.getSize() - 1)) {
-                // ✅ FIX: use the actual config paths you have:
-                // menus.homes.navigation.close_item.click.player_commands / console_commands
                 runClickCommandsFromPaths(
                         p, navPh,
                         "menus.homes.navigation.close_item.click",
@@ -1285,7 +1280,6 @@ public final class HomesMenu implements Listener {
             }
 
             if (slot == clamp(holder.navPageSlot(), 0, top.getSize() - 1) && top.getItem(slot) != null) {
-                // optional: allow page_item clicks too
                 runClickCommandsFromPaths(
                         p, navPh,
                         "menus.homes.navigation.page_item.click",
@@ -1329,8 +1323,6 @@ public final class HomesMenu implements Listener {
             if (!exists) return;
             if (clicked.getType() != expectedSavedBed) return;
 
-            // ✅ FIX: use your config path shape:
-            // menus.homes.home_items.teleport.click.*
             runClickCommandsFromPaths(
                     p, ph,
                     "menus.homes.home_items.teleport.click",
@@ -1363,8 +1355,6 @@ public final class HomesMenu implements Listener {
             if (clicked.getType() == createMat) {
                 int returnPage = holder.page();
 
-                // ✅ FIX: your config shape for empty_action is:
-                // menus.homes.home_items.empty_action.click.*
                 runClickCommandsFromPaths(
                         p, ph,
                         "menus.homes.home_items.empty_action.click",
@@ -1374,7 +1364,8 @@ public final class HomesMenu implements Listener {
                 boolean close = plugin.getConfig().getBoolean("menus.homes.home_items.empty_action.click.close_menu", true);
                 if (close) p.closeInventory();
 
-                Bukkit.getScheduler().runTask(plugin, () -> {
+                // keep on correct thread
+                Sched.run(p, () -> {
                     try {
                         openHomeNameSign(p, returnPage, homeNumber);
                     } finally {
@@ -1390,8 +1381,6 @@ public final class HomesMenu implements Listener {
                     return;
                 }
 
-                // ✅ FIX: delete_action is:
-                // menus.homes.home_items.delete_action.click.*
                 runClickCommandsFromPaths(
                         p, ph,
                         "menus.homes.home_items.delete_action.click",
@@ -1406,7 +1395,7 @@ public final class HomesMenu implements Listener {
 
                 final String deleteName = actualName;
                 doDeleteHomeApiFirst(p, deleteName).whenComplete((ok, err) ->
-                        Bukkit.getScheduler().runTask(plugin, () -> {
+                        Sched.run(p, () -> {
                             try { refreshIfStillOpen(p); }
                             finally { endAction(p.getUniqueId()); }
                         })
@@ -1480,7 +1469,7 @@ public final class HomesMenu implements Listener {
         final OnlineUser user = api.adaptUser(p);
 
         api.getUserHomes(user).thenAccept(homeList ->
-                Bukkit.getScheduler().runTask(plugin, () -> {
+                Sched.run(p, () -> {
                     if (!p.isOnline()) return;
 
                     int pages = Math.max(1, (int) Math.ceil(maxHomes / (double) holder.perPage()));
@@ -1554,7 +1543,7 @@ public final class HomesMenu implements Listener {
 
     private CompletableFuture<Boolean> completeAfterTicks(long ticks) {
         CompletableFuture<Boolean> cf = new CompletableFuture<>();
-        Bukkit.getScheduler().runTaskLater(plugin, () -> cf.complete(true), ticks);
+        Sched.laterGlobal(ticks, () -> cf.complete(true));
         return cf;
     }
 
@@ -1709,7 +1698,7 @@ public final class HomesMenu implements Listener {
     }
 
     // ---------------------------------------------------------------------
-    // ✅ Max homes logic (FIXED per your request)
+    // ✅ Max homes logic
     // ---------------------------------------------------------------------
     private int getMaxHomes(Player p) {
         int permMax = readMaxHomesFromPermissions(p);

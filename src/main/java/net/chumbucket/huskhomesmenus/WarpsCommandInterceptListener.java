@@ -33,7 +33,7 @@ public final class WarpsCommandInterceptListener implements Listener {
         this.config = config;
     }
 
-    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onCommand(PlayerCommandPreprocessEvent e) {
         final Player p = e.getPlayer();
 
@@ -55,7 +55,7 @@ public final class WarpsCommandInterceptListener implements Listener {
         String first = parts[0].substring(1);
         if (first.isBlank()) return;
 
-        // ✅ Do NOT intercept namespaced commands like /huskhomes:warp
+        // Do NOT intercept namespaced commands like /huskhomes:warp
         if (first.contains(":")) return;
 
         final String cmd = first.toLowerCase(Locale.ROOT);
@@ -63,11 +63,14 @@ public final class WarpsCommandInterceptListener implements Listener {
         // Only care about /warp and /warps
         if (!(cmd.equals("warp") || cmd.equals("warps"))) return;
 
-        // Permission gate
-        if (!p.hasPermission("huskhomesmenus.warp")) return;
-
         // Only intercept "/warp" and "/warps" with NO args
         if (parts.length != 1) return;
+
+        // ✅ Permission gate should match HuskHomes permissions, not huskhomesmenus.*
+        // /warp -> huskhomes.command.warp
+        // /warps -> huskhomes.command.warplist
+        if ("warp".equals(cmd) && !p.hasPermission("huskhomes.command.warp")) return;
+        if ("warps".equals(cmd) && !p.hasPermission("huskhomes.command.warplist")) return;
 
         e.setCancelled(true);
 
@@ -77,7 +80,8 @@ public final class WarpsCommandInterceptListener implements Listener {
         }
 
         try {
-            warpsMenu.open(p);
+            // ✅ Folia-safe: open inventory on the player's region thread
+            Sched.run(p, () -> warpsMenu.open(p));
         } catch (Throwable t) {
             p.sendMessage(AMP.deserialize((config != null ? config.prefix() : "") + "&cWarp menu failed to open."));
             if (config != null && config.debug()) t.printStackTrace();

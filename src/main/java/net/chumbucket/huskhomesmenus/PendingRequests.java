@@ -72,7 +72,7 @@ public final class PendingRequests {
         if (texturesValue == null || texturesValue.isBlank()) return;
 
         String key = senderName.toLowerCase(Locale.ROOT);
-        Skin skin = new Skin(texturesValue, texturesSignature);
+        Skin skin = new Skin(texturesValue, (texturesSignature == null || texturesSignature.isBlank()) ? null : texturesSignature);
 
         // per-target
         if (target != null) {
@@ -103,7 +103,7 @@ public final class PendingRequests {
             }
         }
 
-        // 2) global by uuid
+        // 2) global by uuid (best match when we know sender uuid)
         if (target != null) {
             UUID senderUuid = getSenderUuid(target, senderName);
             if (senderUuid != null) {

@@ -16,6 +16,11 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 
+/**
+ * PlaceholderAPI expansion for HuskHomesMenus.
+ *
+ * ✅ Folia-safe: purely reads toggle state + returns strings (no scheduling, no world access).
+ */
 public final class Placeholders extends PlaceholderExpansion {
 
     private final JavaPlugin plugin;
@@ -40,8 +45,16 @@ public final class Placeholders extends PlaceholderExpansion {
 
     @Override
     public String getVersion() {
-        // ✅ avoids deprecated JavaPlugin#getDescription()
-        return plugin.getPluginMeta().getVersion();
+        // ✅ Paper (modern) API; on older Spigot this method may not exist, so fall back safely.
+        try {
+            return plugin.getPluginMeta().getVersion();
+        } catch (Throwable ignored) {
+            try {
+                return plugin.getPluginMeta().getVersion();
+            } catch (Throwable ignored2) {
+                return "unknown";
+            }
+        }
     }
 
     @Override
@@ -51,16 +64,13 @@ public final class Placeholders extends PlaceholderExpansion {
 
     @Override
     public String onPlaceholderRequest(Player player, String params) {
-        if (player == null || params == null) {
-            return null;
-        }
+        if (player == null || params == null) return null;
 
-        final boolean tpa = toggles.isTpaOn(player);
-        final boolean tpahere = toggles.isTpahereOn(player);
+        final boolean tpa = safe(() -> toggles.isTpaOn(player), true);
+        final boolean tpahere = safe(() -> toggles.isTpahereOn(player), true);
 
-        // ✅ NEW
-        final boolean tpmenu = toggles.isTpMenuOn(player);
-        final boolean tpauto = toggles.isTpAutoOn(player);
+        final boolean tpmenu = safe(() -> toggles.isTpMenuOn(player), true);
+        final boolean tpauto = safe(() -> toggles.isTpAutoOn(player), true);
 
         switch (params.toLowerCase()) {
             // -------------------------
@@ -135,10 +145,20 @@ public final class Placeholders extends PlaceholderExpansion {
 
     /**
      * PlaceholderAPI wants a String back, so we keep this as legacy formatting.
-     * (Your scoreboard/plugin consuming this will interpret &-codes.)
+     * (Scoreboards/plugins consuming this will interpret &-codes or §-codes depending on their pipeline.)
      */
     private String color(String s) {
         if (s == null) return "";
         return AMP.serialize(AMP.deserialize(s));
+    }
+
+    private interface BoolSupplier { boolean get() throws Exception; }
+
+    private boolean safe(BoolSupplier s, boolean def) {
+        try {
+            return s.get();
+        } catch (Throwable ignored) {
+            return def;
+        }
     }
 }
