@@ -1,0 +1,101 @@
+name: Bug report
+description: Report a reproducible problem with NetworkNick
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill out the details below so we can reproduce it.
+
+  - type: input
+    id: version
+    attributes:
+      label: NetworkNick version
+      description: The plugin version (from /plugins or the jar filename)
+      placeholder: "1.0.1"
+    validations:
+      required: true
+
+  - type: input
+    id: server
+    attributes:
+      label: Server software + version
+      description: Paper/Spigot + Minecraft version (and build number if Paper)
+      placeholder: "Paper 1.21.4 build 123"
+    validations:
+      required: true
+
+  - type: input
+    id: java
+    attributes:
+      label: Java version
+      placeholder: "Java 21"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Setup type
+      description: How are you running NetworkNick?
+      options:
+        - Single server
+        - Proxy / multi-server (Redis)
+        - Not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: "What you expected to happen..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: "What actually happened..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Be specific so we can reproduce it.
+      placeholder: |
+        1. /nick &aTest
+        2. Reconnect
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / errors
+      description: Paste relevant console errors (please use a paste site if it's long).
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config.yml sections
+      description: Paste only the relevant parts (redis/keys/nick/hide/enforce).
+      render: yaml
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      placeholder: "Other plugins involved? LuckPerms/TAB/chat plugins? Anything else?"
+    validations:
+      required: false
