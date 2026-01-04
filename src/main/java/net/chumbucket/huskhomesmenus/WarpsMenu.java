@@ -99,8 +99,6 @@ public final class WarpsMenu implements Listener {
                 final WarpPermMode mode = determineMode(player, sorted);
 
                 // Visible list:
-                // - PER_WARP: ONLY warps the player has huskhomes.warp.<warpname> (or huskhomes.warp.*)
-                // - SHOW_ALL: player has NO per-warp permissions at all -> show all warps
                 final List<Warp> visible = new ArrayList<>();
                 for (Warp w : sorted) {
                     String name = safeWarpName(w);
@@ -143,7 +141,6 @@ public final class WarpsMenu implements Listener {
                     String warpName = safeWarpName(warp);
                     if (warpName == null || warpName.isBlank()) continue;
 
-                    // In SHOW_ALL mode, everything is displayed as usable.
                     boolean canUse = (mode == WarpPermMode.SHOW_ALL) || canUseWarp(player, warpName);
 
                     ItemStack item = buildWarpItem(player, warp, canUse);
@@ -209,13 +206,10 @@ public final class WarpsMenu implements Listener {
         Map<String, String> ph = new HashMap<>();
         ph.put("%warp_name%", warpName);
         ph.put("%warp_description%", safeWarpDescription(warp));
-
-        // ✅ HuskHomes-derived placeholders (best-effort, no object @hash)
         ph.put("%warp_server%", safeWarpServer(warp));
         ph.put("%warp_world%", safeWarpWorld(warp));
         ph.put("%warp_dimension%", safeWarpDimension(warp));
         ph.put("%warp_coords%", safeWarpCoords(warp));
-
         ph.put("%warp_permission%", "huskhomes.warp." + warpName.toLowerCase(Locale.ROOT));
 
         return config.buildItem(base, ph);
@@ -237,25 +231,65 @@ public final class WarpsMenu implements Listener {
         int rawSlot = e.getRawSlot();
         if (rawSlot < 0 || rawSlot >= top.getSize()) return;
 
-        // nav clicks
+        // -------------------------
+        // NAV clicks + configured commands
+        // -------------------------
         if (config.warpsNavEnabled()) {
             if (rawSlot == config.warpsNavCloseSlot()) {
                 playSound(p, config.warpsNavClickSound(), config.warpsTeleportClickSound());
-                p.closeInventory();
+
+                // ✅ run commands from your config:
+                // menus.warps.navigation.close_item.click.player_commands / console_commands
+                Map<String, String> navPh = new HashMap<>();
+                navPh.put("%player%", p.getName());
+                navPh.put("%page%", String.valueOf(holder.page()));
+
+                runPlayerCommands(p, plugin.getConfig().getStringList("menus.warps.navigation.close_item.click.player_commands"), navPh);
+                runConsoleCommands(plugin.getConfig().getStringList("menus.warps.navigation.close_item.click.console_commands"), navPh);
+
+                boolean close = plugin.getConfig().getBoolean("menus.warps.navigation.close_item.click.close_menu", true);
+                if (close) p.closeInventory();
                 return;
             }
+
             if (rawSlot == config.warpsNavPrevSlot()) {
                 playSound(p, config.warpsNavClickSound(), config.warpsTeleportClickSound());
+
+                Map<String, String> navPh = new HashMap<>();
+                navPh.put("%player%", p.getName());
+                navPh.put("%page%", String.valueOf(holder.page()));
+
+                runPlayerCommands(p, plugin.getConfig().getStringList("menus.warps.navigation.prev_item.click.player_commands"), navPh);
+                runConsoleCommands(plugin.getConfig().getStringList("menus.warps.navigation.prev_item.click.console_commands"), navPh);
+
                 open(p, holder.page() - 1);
                 return;
             }
+
             if (rawSlot == config.warpsNavNextSlot()) {
                 playSound(p, config.warpsNavClickSound(), config.warpsTeleportClickSound());
+
+                Map<String, String> navPh = new HashMap<>();
+                navPh.put("%player%", p.getName());
+                navPh.put("%page%", String.valueOf(holder.page()));
+
+                runPlayerCommands(p, plugin.getConfig().getStringList("menus.warps.navigation.next_item.click.player_commands"), navPh);
+                runConsoleCommands(plugin.getConfig().getStringList("menus.warps.navigation.next_item.click.console_commands"), navPh);
+
                 open(p, holder.page() + 1);
                 return;
             }
+
             if (rawSlot == config.warpsNavPageSlot()) {
                 playSound(p, config.warpsNavClickSound(), config.warpsTeleportClickSound());
+
+                Map<String, String> navPh = new HashMap<>();
+                navPh.put("%player%", p.getName());
+                navPh.put("%page%", String.valueOf(holder.page()));
+
+                runPlayerCommands(p, plugin.getConfig().getStringList("menus.warps.navigation.page_item.click.player_commands"), navPh);
+                runConsoleCommands(plugin.getConfig().getStringList("menus.warps.navigation.page_item.click.console_commands"), navPh);
+
                 return;
             }
         }
@@ -323,20 +357,37 @@ public final class WarpsMenu implements Listener {
                 if (!p.isOnline()) return;
                 if (warpName == null || warpName.isBlank()) return;
 
-                // In SHOW_ALL mode, allow attempt (HH may still deny; we'll show teleport_failed if it throws)
+                Map<String, String> ph = new HashMap<>();
+                ph.put("%player%", p.getName());
+                ph.put("%warp_name%", warpName);
+                ph.put("%warp_description%", safeWarpDescription(targetWarp));
+                ph.put("%warp_server%", safeWarpServer(targetWarp));
+                ph.put("%warp_world%", safeWarpWorld(targetWarp));
+                ph.put("%warp_dimension%", safeWarpDimension(targetWarp));
+                ph.put("%warp_coords%", safeWarpCoords(targetWarp));
+                ph.put("%warp_permission%", "huskhomes.warp." + warpName.toLowerCase(Locale.ROOT));
+
                 boolean canUse = (mode == WarpPermMode.SHOW_ALL) || canUseWarp(p, warpName);
 
                 if (!canUse) {
                     playSound(p, config.warpsLockedClickSound(), config.warpsTeleportClickSound());
-                    if (config.warpsLockedCloseOnClick()) {
-                        p.closeInventory();
-                    }
+
+                    // ✅ LOCKED click actions (override first, then global)
+                    // global: menus.warps.warp_items.locked.click.*
+                    runClickActions(p, warpName, "menus.warps.warp_items.locked.click", ph);
+
+                    boolean close = plugin.getConfig().getBoolean(
+                            "menus.warps.warp_items.locked.click.close_menu", false);
+                    if (close) p.closeInventory();
                     return;
                 }
 
                 try {
-                    OnlineUser user = api.adaptUser(p);
+                    // ✅ TELEPORT click actions (override first, then global)
+                    // global: menus.warps.warp_items.teleport.click.*
+                    runClickActions(p, warpName, "menus.warps.warp_items.teleport.click", ph);
 
+                    OnlineUser user = api.adaptUser(p);
                     api.teleportBuilder()
                             .teleporter(user)
                             .target(targetWarp)
@@ -345,9 +396,10 @@ public final class WarpsMenu implements Listener {
 
                     playSound(p, config.warpsTeleportClickSound(), null);
 
-                    if (config.warpsTeleportCloseOnClick()) {
-                        p.closeInventory();
-                    }
+                    boolean close = plugin.getConfig().getBoolean(
+                            "menus.warps.warp_items.teleport.click.close_menu", true);
+                    if (close) p.closeInventory();
+
                 } catch (Throwable t) {
                     p.sendMessage(config.msgWithPrefix("messages.warps.teleport_failed", "&cTeleport failed."));
                     if (config.debug()) t.printStackTrace();
@@ -371,13 +423,82 @@ public final class WarpsMenu implements Listener {
     }
 
     // -------------------------
+    // ✅ Click actions (player/console) + per-warp override support
+    // -------------------------
+
+    private void runClickActions(Player p, String warpName, String globalClickBasePath, Map<String, String> ph) {
+        if (p == null || globalClickBasePath == null) return;
+
+        // 1) per-warp override click path (only if present)
+        // menus.warps.warp_overrides.<warp>.item.click.player_commands
+        if (warpName != null && !warpName.isBlank()) {
+            String key = warpName.toLowerCase(Locale.ROOT);
+            String overrideBase = "menus.warps.warp_overrides." + key + ".item.click";
+            runPlayerCommands(p, plugin.getConfig().getStringList(overrideBase + ".player_commands"), ph);
+            runConsoleCommands(plugin.getConfig().getStringList(overrideBase + ".console_commands"), ph);
+        }
+
+        // 2) global click path
+        runPlayerCommands(p, plugin.getConfig().getStringList(globalClickBasePath + ".player_commands"), ph);
+        runConsoleCommands(plugin.getConfig().getStringList(globalClickBasePath + ".console_commands"), ph);
+    }
+
+    private void runPlayerCommands(Player p, List<String> cmds, Map<String, String> ph) {
+        if (p == null || cmds == null || cmds.isEmpty()) return;
+
+        for (String raw : cmds) {
+            if (raw == null) continue;
+            String cmd = applyPlaceholders(raw, ph);
+            if (cmd == null) continue;
+
+            cmd = cmd.trim();
+            if (cmd.isEmpty()) continue;
+
+            if (cmd.startsWith("/")) cmd = cmd.substring(1);
+
+            try {
+                Bukkit.dispatchCommand(p, cmd);
+            } catch (Throwable ignored) { }
+        }
+    }
+
+    private void runConsoleCommands(List<String> cmds, Map<String, String> ph) {
+        if (cmds == null || cmds.isEmpty()) return;
+
+        for (String raw : cmds) {
+            if (raw == null) continue;
+            String cmd = applyPlaceholders(raw, ph);
+            if (cmd == null) continue;
+
+            cmd = cmd.trim();
+            if (cmd.isEmpty()) continue;
+
+            if (cmd.startsWith("/")) cmd = cmd.substring(1);
+
+            try {
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd);
+            } catch (Throwable ignored) { }
+        }
+    }
+
+    private String applyPlaceholders(String s, Map<String, String> ph) {
+        if (s == null) return null;
+        String out = s;
+
+        if (ph != null && !ph.isEmpty()) {
+            for (Map.Entry<String, String> e : ph.entrySet()) {
+                if (e.getKey() == null) continue;
+                out = out.replace(e.getKey(), e.getValue() == null ? "" : e.getValue());
+            }
+        }
+
+        return out;
+    }
+
+    // -------------------------
     // Permission rules
     // -------------------------
 
-    /**
-     * STRICT per-warp rule:
-     * player must have huskhomes.warp.<name> (or huskhomes.warp.*)
-     */
     private boolean canUseWarp(Player p, String warpName) {
         if (p == null) return false;
         if (warpName == null || warpName.isBlank()) return false;
@@ -386,18 +507,11 @@ public final class WarpsMenu implements Listener {
         return p.hasPermission("huskhomes.warp.*") || p.hasPermission(node);
     }
 
-    /**
-     * Mode selection:
-     * - If player has ANY per-warp permission (huskhomes.warp.* OR huskhomes.warp.<any existing warp>),
-     *   then we enforce PER_WARP filtering in the menu.
-     * - If they have NONE of those, we SHOW_ALL warps in the menu.
-     */
     private WarpPermMode determineMode(Player p, List<Warp> sortedWarps) {
         if (p == null) return WarpPermMode.SHOW_ALL;
 
         if (p.hasPermission("huskhomes.warp.*")) return WarpPermMode.PER_WARP;
 
-        // Check if they have at least one huskhomes.warp.<warpname> for any existing warp
         if (sortedWarps != null) {
             for (Warp w : sortedWarps) {
                 String name = safeWarpName(w);
@@ -480,7 +594,6 @@ public final class WarpsMenu implements Listener {
     private String safeWarpServer(Warp w) {
         if (w == null) return "";
 
-        // Try getServer()
         try {
             Method m = w.getClass().getMethod("getServer");
             Object serverObj = m.invoke(w);
@@ -488,7 +601,6 @@ public final class WarpsMenu implements Listener {
             if (!name.isBlank()) return name;
         } catch (Throwable ignored) {}
 
-        // Try meta.server
         try {
             Object meta = w.getClass().getField("meta").get(w);
             if (meta != null) {
@@ -506,13 +618,11 @@ public final class WarpsMenu implements Listener {
 
         Object worldObj = null;
 
-        // Try getWorld()
         try {
             Method m = w.getClass().getMethod("getWorld");
             worldObj = m.invoke(w);
         } catch (Throwable ignored) {}
 
-        // Try meta.world
         if (worldObj == null) {
             try {
                 Object meta = w.getClass().getField("meta").get(w);
@@ -527,7 +637,6 @@ public final class WarpsMenu implements Listener {
     private String safeWarpDimension(Warp w) {
         if (w == null) return "";
 
-        // 1) Try getDimension()
         try {
             Method m = w.getClass().getMethod("getDimension");
             Object o = m.invoke(w);
@@ -535,7 +644,6 @@ public final class WarpsMenu implements Listener {
             if (!s.isBlank() && !looksLikeObjectToString(s)) return s;
         } catch (Throwable ignored) {}
 
-        // 2) Try meta.dimension or meta.environment
         try {
             Object meta = w.getClass().getField("meta").get(w);
             if (meta != null) {
@@ -549,7 +657,6 @@ public final class WarpsMenu implements Listener {
             }
         } catch (Throwable ignored) {}
 
-        // 3) Fallback to Bukkit env by world name
         String worldName = safeWarpWorld(w);
         if (worldName == null || worldName.isBlank()) return "";
 
@@ -563,13 +670,11 @@ public final class WarpsMenu implements Listener {
         };
     }
 
-    // ✅ Rounded nearest whole number for x/y/z
     private String safeWarpCoords(Warp w) {
         if (w == null) return "";
 
         Double x = null, y = null, z = null;
 
-        // Try getX/Y/Z
         try {
             Method mx = w.getClass().getMethod("getX");
             Method my = w.getClass().getMethod("getY");
@@ -583,7 +688,6 @@ public final class WarpsMenu implements Listener {
             if (oz instanceof Number nz) z = nz.doubleValue();
         } catch (Throwable ignored) {}
 
-        // Try meta.x/y/z if needed
         if (x == null || y == null || z == null) {
             try {
                 Object meta = w.getClass().getField("meta").get(w);
@@ -608,10 +712,6 @@ public final class WarpsMenu implements Listener {
         return rx + ", " + ry + ", " + rz;
     }
 
-    /**
-     * Extract a human-friendly name from HH objects (World/Server/etc).
-     * Tries: getName(), name field, toString (only if not object-ish)
-     */
     private String extractNameLike(Object obj) {
         if (obj == null) return "";
         if (obj instanceof String s) return s;
@@ -632,7 +732,6 @@ public final class WarpsMenu implements Listener {
     }
 
     private boolean looksLikeObjectToString(String s) {
-        // Heuristic: "some.package.Class@deadbeef"
         return s != null && s.contains("@") && s.contains(".");
     }
 

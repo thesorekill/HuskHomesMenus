@@ -47,7 +47,7 @@ public final class ConfirmRequestMenu implements Listener {
     private final NamespacedKey KEY_DIM_END;
 
     // ------------------------------------------------------------------
-    // NEW: session tracking so "close menu" can auto-deny
+    // session tracking so "close menu" can auto-deny
     // ------------------------------------------------------------------
     private static final class Session {
         final String senderName;
@@ -99,7 +99,6 @@ public final class ConfirmRequestMenu implements Listener {
         String title = config.color(menu.getString(titleKey, menu.getString("title", "&7CONFIRM REQUEST")));
 
         ConfirmHolder holder = new ConfirmHolder(senderName, type);
-        // Titles are fine (not lore), but we keep consistent.
         Inventory inv = Bukkit.createInventory(holder, rows * 9, AMP.deserialize(title));
 
         boolean senderLocal = (senderName != null && Bukkit.getPlayerExact(senderName) != null);
@@ -186,7 +185,7 @@ public final class ConfirmRequestMenu implements Listener {
             if (slot >= 0 && slot < inv.getSize()) inv.setItem(slot, item);
         }
 
-        // NEW: store session before opening
+        // store session before opening
         sessions.put(target.getUniqueId(), new Session(senderName));
 
         target.openInventory(inv);
@@ -370,7 +369,6 @@ public final class ConfirmRequestMenu implements Listener {
                 text = text.replace("%dimension_name%", safeDim)
                         .replace("Loading...", safeDim);
 
-                // ✅ preserve colors + disable italics unless &o
                 meta.displayName(legacyToComponentNoItalic(text));
             }
 
@@ -389,7 +387,6 @@ public final class ConfirmRequestMenu implements Listener {
                     line = line.replace("%dimension_name%", safeDim)
                             .replace("Loading...", safeDim);
 
-                    // ✅ preserve colors + disable italics unless &o
                     newLore.add(legacyToComponentNoItalic(line));
                 }
 
@@ -450,7 +447,6 @@ public final class ConfirmRequestMenu implements Listener {
                         .replace("Loading...", safeRegion)
                         .replace("%region%", safeRegion);
 
-                // ✅ preserve colors + disable italics unless &o
                 meta.displayName(legacyToComponentNoItalic(text));
             }
 
@@ -468,7 +464,6 @@ public final class ConfirmRequestMenu implements Listener {
                             .replace("Loading...", safeRegion)
                             .replace("%region%", safeRegion);
 
-                    // ✅ preserve colors + disable italics unless &o
                     newLore.add(legacyToComponentNoItalic(line));
                 }
 
@@ -481,16 +476,16 @@ public final class ConfirmRequestMenu implements Listener {
     }
 
     // ---------------------------
-    // NEW: Auto-deny on close
+    // Auto-deny on close
     // ---------------------------
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
     public void onClose(InventoryCloseEvent e) {
         if (!(e.getPlayer() instanceof Player p)) return;
 
-        // Only our menus
+        // Only for our confirm menu
         if (!(e.getInventory().getHolder() instanceof ConfirmHolder)) return;
 
-        // If disabled in config, do nothing
+        // If auto-deny disabled, just clear session
         if (!config.isEnabled("menus.confirm_request.auto_deny_on_close", true)) {
             sessions.remove(p.getUniqueId());
             return;
@@ -499,34 +494,36 @@ public final class ConfirmRequestMenu implements Listener {
         Session s = sessions.get(p.getUniqueId());
         if (s == null) return;
 
+        // If they already accepted/denied, do nothing
         if (s.acted) {
             sessions.remove(p.getUniqueId());
             return;
         }
 
+        // mark acted + remove session immediately to prevent double-firing
+        s.acted = true;
         sessions.remove(p.getUniqueId());
 
-        // Resolve sender into a new variable (this one CAN be reassigned)
         String resolvedSender = s.senderName;
         if (resolvedSender == null || resolvedSender.isBlank()) {
             PendingRequests.Pending last = PendingRequests.get(p.getUniqueId());
             if (last != null) resolvedSender = last.senderName();
         }
-
         if (resolvedSender == null || resolvedSender.isBlank()) return;
 
-        // Make a final copy for the lambda
         final String senderFinal = resolvedSender;
 
-        // prevent intercept loop
+        // prevent the deny command we run here from being "caught" by any PendingRequests hooks
         PendingRequests.bypassForMs(p.getUniqueId(), 1200);
 
-        // cleanup pending
-        PendingRequests.remove(p.getUniqueId(), senderFinal);
-
-        // deny via HuskHomes
+        // IMPORTANT: don't remove the pending request until AFTER the command runs,
+        // otherwise /tpdeny <name> can fail to match on some setups.
         Bukkit.getScheduler().runTask(plugin, () -> {
-            Bukkit.dispatchCommand(p, "huskhomes:tpdeny " + senderFinal);
+            try {
+                Bukkit.dispatchCommand(p, "huskhomes:tpdeny " + senderFinal);
+            } finally {
+                PendingRequests.remove(p.getUniqueId(), senderFinal);
+            }
         });
     }
 
@@ -578,10 +575,88 @@ public final class ConfirmRequestMenu implements Listener {
         }
     }
 
+    // ---------------------------
+    // ✅ Click actions (player/console)
+    // ---------------------------
+
+    private void runClickCommands(Player p, ConfigurationSection buttonSection, ConfirmHolder holder) {
+        if (p == null || buttonSection == null) return;
+
+        ConfigurationSection click = buttonSection.getConfigurationSection("click");
+        if (click == null) return;
+
+        List<String> playerCmds = click.getStringList("player_commands");
+        List<String> consoleCmds = click.getStringList("console_commands");
+
+        if ((playerCmds == null || playerCmds.isEmpty()) && (consoleCmds == null || consoleCmds.isEmpty())) return;
+
+        String sender = (holder != null) ? holder.senderName : null;
+        String senderSafe = (sender == null) ? "" : sender;
+
+        boolean senderLocal = (sender != null && Bukkit.getPlayerExact(sender) != null);
+        String region = resolveRegion(sender, senderLocal);
+        String dimension = resolveDimension(p, sender, senderLocal);
+
+        Map<String, String> ph = new HashMap<>();
+        ph.put("%player%", p.getName());
+        ph.put("%sender%", senderSafe);
+        ph.put("%dimension_name%", safe(dimension));
+        ph.put("%region%", safe(region));
+
+        // player commands
+        if (playerCmds != null) {
+            for (String raw : playerCmds) {
+                dispatchWithPlaceholdersAsPlayer(p, raw, ph);
+            }
+        }
+
+        // console commands
+        if (consoleCmds != null) {
+            for (String raw : consoleCmds) {
+                dispatchWithPlaceholdersAsConsole(raw, ph);
+            }
+        }
+    }
+
+    private void dispatchWithPlaceholdersAsPlayer(Player p, String raw, Map<String, String> ph) {
+        if (p == null || raw == null) return;
+
+        String cmd = applyPlaceholders(raw, ph).trim();
+        if (cmd.isEmpty()) return;
+
+        if (cmd.startsWith("/")) cmd = cmd.substring(1);
+
+        try { Bukkit.dispatchCommand(p, cmd); } catch (Throwable ignored) {}
+    }
+
+    private void dispatchWithPlaceholdersAsConsole(String raw, Map<String, String> ph) {
+        if (raw == null) return;
+
+        String cmd = applyPlaceholders(raw, ph).trim();
+        if (cmd.isEmpty()) return;
+
+        if (cmd.startsWith("/")) cmd = cmd.substring(1);
+
+        try { Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd); } catch (Throwable ignored) {}
+    }
+
+    private String applyPlaceholders(String s, Map<String, String> ph) {
+        if (s == null) return "";
+        String out = s;
+
+        if (ph != null && !ph.isEmpty()) {
+            for (Map.Entry<String, String> ent : ph.entrySet()) {
+                if (ent.getKey() == null) continue;
+                out = out.replace(ent.getKey(), ent.getValue() == null ? "" : ent.getValue());
+            }
+        }
+        return out;
+    }
+
     private void handleButton(Player p, ConfigurationSection section, ConfirmHolder holder, boolean doAccept) {
         if (section == null) return;
 
-        // NEW: mark acted so close event doesn't auto-deny
+        // mark acted so close event doesn't auto-deny
         Session s = sessions.get(p.getUniqueId());
         if (s != null) s.acted = true;
 
@@ -606,10 +681,12 @@ public final class ConfirmRequestMenu implements Listener {
             if (doAccept) runAccept(p, sender, type);
             else runDeny(p, sender, type);
 
+            // ✅ run configured click commands (player + console)
+            runClickCommands(p, section, holder);
+
             if (sender != null && !sender.isBlank()) PendingRequests.remove(p.getUniqueId(), sender);
             else PendingRequests.clear(p.getUniqueId());
 
-            // NEW: cleanup session
             sessions.remove(p.getUniqueId());
 
             if (close) p.closeInventory();
@@ -701,7 +778,6 @@ public final class ConfirmRequestMenu implements Listener {
                 }
             }
 
-            // ✅ no-italic unless &o
             meta.displayName(legacyToComponentNoItalic(apply(name, senderName, dimension, region)));
 
             List<String> loreLines = applyAll(lore, senderName, dimension, region);
@@ -746,7 +822,6 @@ public final class ConfirmRequestMenu implements Listener {
             pdc.set(KEY_DIM_NETHER, PersistentDataType.STRING, netherMat);
             pdc.set(KEY_DIM_END, PersistentDataType.STRING, endMat);
 
-            // ✅ no-italic unless &o
             meta.displayName(legacyToComponentNoItalic(apply(name, senderName, dimension, region)));
 
             List<String> loreLines = applyAll(lore, senderName, dimension, region);
@@ -767,7 +842,6 @@ public final class ConfirmRequestMenu implements Listener {
         ItemStack it = new ItemStack(mat);
         ItemMeta meta = it.getItemMeta();
         if (meta != null) {
-            // ✅ no-italic unless &o
             meta.displayName(legacyToComponentNoItalic(apply(name, senderName, dimension, region)));
 
             List<String> loreLines = applyAll(lore, senderName, dimension, region);
@@ -804,7 +878,6 @@ public final class ConfirmRequestMenu implements Listener {
         ItemStack it = new ItemStack(mat);
         ItemMeta meta = it.getItemMeta();
         if (meta != null) {
-            // ✅ no-italic unless &o
             meta.displayName(legacyToComponentNoItalic(replaceAll(name, repl)));
 
             List<Component> outLore = new ArrayList<>();
@@ -862,7 +935,7 @@ public final class ConfirmRequestMenu implements Listener {
     }
 
     // ---------------------------
-    // ✅ Skull texture injection (remote skin)
+    // Skull texture injection (remote skin)
     // ---------------------------
     private boolean applyTexturesToSkull(SkullMeta meta, String ownerName, String texturesValue, String texturesSignature) {
         if (meta == null) return false;
@@ -873,13 +946,11 @@ public final class ConfirmRequestMenu implements Listener {
         final String sig = (texturesSignature == null || texturesSignature.isBlank()) ? null : texturesSignature;
 
         try {
-            // Build GameProfile(UUID, NON-NULL NAME)
             Class<?> gameProfileClz = Class.forName("com.mojang.authlib.GameProfile");
             Object gameProfile = gameProfileClz
                     .getConstructor(UUID.class, String.class)
                     .newInstance(UUID.randomUUID(), safeName);
 
-            // Create Property("textures", value, sig?)
             Class<?> propClz = Class.forName("com.mojang.authlib.properties.Property");
             Object texturesProp;
             try {
@@ -890,7 +961,6 @@ public final class ConfirmRequestMenu implements Listener {
                         .newInstance("textures", texturesValue);
             }
 
-            // Put into property map
             Object propertyMap = gameProfileClz.getMethod("getProperties").invoke(gameProfile);
             boolean putOk = false;
             try {
@@ -903,9 +973,6 @@ public final class ConfirmRequestMenu implements Listener {
                         .invoke(propertyMap, "textures", texturesProp);
             }
 
-            // ---------------------------------------------------------
-            // ✅ Find the *real* skull profile field (not meta-key junk)
-            // ---------------------------------------------------------
             Field profileField = findSkullProfileField(meta.getClass());
             if (profileField == null) {
                 if (dbg) plugin.getLogger().info("applyTexturesToSkull: could not find skull profile field on " + meta.getClass().getName());
@@ -916,24 +983,20 @@ public final class ConfirmRequestMenu implements Listener {
             Class<?> fieldType = profileField.getType();
             String fieldTypeName = fieldType.getName();
 
-            // Case A: field is GameProfile
             if (fieldType.isAssignableFrom(gameProfileClz) || fieldTypeName.equals(gameProfileClz.getName())) {
                 profileField.set(meta, gameProfile);
                 if (dbg) plugin.getLogger().info("applyTexturesToSkull: injected GameProfile into " + profileField.getName());
                 return true;
             }
 
-            // Case B: field is ResolvableProfile (newer CraftMetaSkull)
             String ftLower = fieldTypeName.toLowerCase(Locale.ROOT);
             if (ftLower.contains("resolvableprofile")) {
                 Object resolvable = null;
 
-                // ctor(GameProfile)
                 try {
                     resolvable = fieldType.getConstructor(gameProfileClz).newInstance(gameProfile);
                 } catch (Throwable ignored) {}
 
-                // static factory methods sometimes exist
                 if (resolvable == null) {
                     for (String mname : List.of("of", "fromGameProfile", "a")) {
                         try {
@@ -954,7 +1017,6 @@ public final class ConfirmRequestMenu implements Listener {
                 return true;
             }
 
-            // If we got here, we found a field but it's not a supported profile type
             if (dbg) plugin.getLogger().info("applyTexturesToSkull: found field '" + profileField.getName()
                     + "' but unsupported type: " + fieldTypeName);
             return false;
@@ -972,7 +1034,6 @@ public final class ConfirmRequestMenu implements Listener {
     }
 
     private Field findSkullProfileField(Class<?> metaClass) {
-        // Walk class hierarchy, but be strict about which fields qualify
         Class<?> c = metaClass;
         Field best = null;
 
@@ -990,7 +1051,6 @@ public final class ConfirmRequestMenu implements Listener {
                 String ftype = f.getType().getName();
                 String ftypeLower = ftype.toLowerCase(Locale.ROOT);
 
-                // ✅ Hard filter: only accept actual profile container types
                 boolean looksLikeProfileType =
                         ftype.endsWith("GameProfile")
                                 || ftypeLower.contains("gameprofile")
@@ -998,10 +1058,7 @@ public final class ConfirmRequestMenu implements Listener {
 
                 if (!looksLikeProfileType) continue;
 
-                // Prefer exact "profile"
                 if ("profile".equalsIgnoreCase(fname)) return f;
-
-                // Otherwise keep as fallback
                 if (best == null) best = f;
             }
 

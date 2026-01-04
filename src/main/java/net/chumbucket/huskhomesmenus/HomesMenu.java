@@ -23,6 +23,7 @@ import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.block.Sign;
 import org.bukkit.block.data.BlockData;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -139,6 +140,120 @@ public final class HomesMenu implements Listener {
         } catch (Throwable ignored) { }
 
         return item;
+    }
+
+    // ---------------------------------------------------------------------
+    // ✅ Click command runner (PLAYER + CONSOLE)
+    //
+    // Supports layouts:
+    // 1) <section>.click.player_commands / <section>.click.console_commands
+    // 2) <section>.player_commands / <section>.console_commands
+    // 3) direct list path: <path> (rare)  -> (player_commands/console_commands only via section)
+    //
+    // Placeholders supported (you already use these):
+    // %player% %home% %home_name% %page% %pages% %max_homes% %prev_page% %next_page%
+    // %home_world% %home_server% %home_dimension% %home_x% %home_y% %home_z% %home_coords%
+    // ---------------------------------------------------------------------
+
+    private void runClickCommandsFromSection(Player p, ConfigurationSection sec, Map<String, String> ph) {
+        if (p == null || sec == null) return;
+
+        List<String> playerCmds = null;
+        List<String> consoleCmds = null;
+
+        ConfigurationSection click = sec.getConfigurationSection("click");
+        if (click != null) {
+            playerCmds = click.getStringList("player_commands");
+            consoleCmds = click.getStringList("console_commands");
+        }
+
+        if ((playerCmds == null || playerCmds.isEmpty()) && sec.isList("player_commands")) {
+            playerCmds = sec.getStringList("player_commands");
+        }
+        if ((consoleCmds == null || consoleCmds.isEmpty()) && sec.isList("console_commands")) {
+            consoleCmds = sec.getStringList("console_commands");
+        }
+
+        if (playerCmds != null && !playerCmds.isEmpty()) {
+            dispatchCommandListAsPlayer(p, playerCmds, ph);
+        }
+        if (consoleCmds != null && !consoleCmds.isEmpty()) {
+            dispatchCommandListAsConsole(consoleCmds, ph);
+        }
+    }
+
+    private void runClickCommandsFromPaths(Player p, Map<String, String> ph, String... paths) {
+        if (p == null || paths == null || paths.length == 0) return;
+
+        for (String path : paths) {
+            if (path == null || path.isBlank()) continue;
+
+            ConfigurationSection sec = plugin.getConfig().getConfigurationSection(path);
+            if (sec != null) {
+                runClickCommandsFromSection(p, sec, ph);
+                continue;
+            }
+
+            // We do NOT guess console/player intent from a raw string list at arbitrary path;
+            // keep the old behavior: only allow direct lists if they are explicitly "player-like"
+            // (and you already used this rarely).
+            List<String> list = plugin.getConfig().getStringList(path);
+            if (list != null && !list.isEmpty()) {
+                dispatchCommandListAsPlayer(p, list, ph);
+            }
+        }
+    }
+
+    private void dispatchCommandListAsPlayer(Player p, List<String> cmds, Map<String, String> ph) {
+        if (p == null || cmds == null || cmds.isEmpty()) return;
+
+        for (String raw : cmds) {
+            if (raw == null) continue;
+
+            String cmd = raw;
+
+            if (ph != null) {
+                for (Map.Entry<String, String> e : ph.entrySet()) {
+                    if (e.getKey() == null) continue;
+                    cmd = cmd.replace(e.getKey(), e.getValue() == null ? "" : e.getValue());
+                }
+            }
+
+            cmd = cmd.trim();
+            if (cmd.isEmpty()) continue;
+
+            if (cmd.startsWith("/")) cmd = cmd.substring(1);
+
+            try {
+                Bukkit.dispatchCommand(p, cmd);
+            } catch (Throwable ignored) { }
+        }
+    }
+
+    private void dispatchCommandListAsConsole(List<String> cmds, Map<String, String> ph) {
+        if (cmds == null || cmds.isEmpty()) return;
+
+        for (String raw : cmds) {
+            if (raw == null) continue;
+
+            String cmd = raw;
+
+            if (ph != null) {
+                for (Map.Entry<String, String> e : ph.entrySet()) {
+                    if (e.getKey() == null) continue;
+                    cmd = cmd.replace(e.getKey(), e.getValue() == null ? "" : e.getValue());
+                }
+            }
+
+            cmd = cmd.trim();
+            if (cmd.isEmpty()) continue;
+
+            if (cmd.startsWith("/")) cmd = cmd.substring(1);
+
+            try {
+                Bukkit.dispatchCommand(Bukkit.getConsoleSender(), cmd);
+            } catch (Throwable ignored) { }
+        }
     }
 
     // ---------------------------------------------------------------------
@@ -483,6 +598,7 @@ public final class HomesMenu implements Listener {
             navPh.put("%max_homes%", String.valueOf(maxHomes));
             navPh.put("%prev_page%", String.valueOf(prevPage));
             navPh.put("%next_page%", String.valueOf(nextPage));
+            navPh.put("%player%", ""); // menu placeholders are config-driven; player placeholder is runtime
 
             int prevSlot = clamp(holder.navPrevSlot(), 0, inv.getSize() - 1);
             int pageSlot = clamp(holder.navPageSlot(), 0, inv.getSize() - 1);
@@ -711,7 +827,6 @@ public final class HomesMenu implements Listener {
             Method lineMethod = frontSide.getClass().getMethod("line", int.class, Component.class);
 
             for (int i = 0; i < 4; i++) {
-                // NOTE: sign editor does not render colors in the same way; keep it clean
                 String plain = stripLegacyColor(raw[i]);
                 Component c = AMP.deserialize(plain).decoration(TextDecoration.ITALIC, false);
 
@@ -741,7 +856,6 @@ public final class HomesMenu implements Listener {
         if (p == null || signLoc == null || lines == null || lines.length < 4) return;
 
         try {
-            // Prefer Paper/Spigot API: Player#sendSignChange(Location, String[])
             Method m = p.getClass().getMethod("sendSignChange", Location.class, String[].class);
             String[] plain = new String[] {
                     stripLegacyColor(lines[0]),
@@ -754,7 +868,6 @@ public final class HomesMenu implements Listener {
         } catch (Throwable ignored) {}
 
         try {
-            // Some newer APIs: sendSignChange(Location, Component[])
             Method m = p.getClass().getMethod("sendSignChange", Location.class, Component[].class);
             Component[] comps = new Component[] {
                     AMP.deserialize(stripLegacyColor(lines[0])).decoration(TextDecoration.ITALIC, false),
@@ -787,16 +900,9 @@ public final class HomesMenu implements Listener {
     private String sanitizeHomeName(String raw, int fallbackHomeNumber) {
         String s = raw == null ? "" : raw.trim();
 
-        // remove color codes (both & and §)
         s = stripLegacyColor(s).trim();
-
-        // Convert spaces -> underscore
         s = s.replaceAll("\\s+", "_").trim();
-
-        // Only keep safe characters
         s = s.replaceAll("[^A-Za-z0-9_\\-]", "");
-
-        // Limit length
         if (s.length() > 32) s = s.substring(0, 32);
 
         if (s.isBlank()) s = String.valueOf(fallbackHomeNumber);
@@ -823,8 +929,6 @@ public final class HomesMenu implements Listener {
             return;
         }
 
-        // Your config has players typing on line 0 (top line).
-        // ✅ If line 0 is blank -> default to numeric home name (same behavior as disabled).
         String rawLine0 = safeSignLine(e, 0);
         String typed = sanitizeHomeName(rawLine0, session.homeNumber);
 
@@ -841,10 +945,8 @@ public final class HomesMenu implements Listener {
 
         int returnPage = session.returnPage;
 
-        // Restore the block immediately
         cleanupSignSession(p.getUniqueId(), true);
 
-        // Perform sethome, then reopen menu
         doSetHomeApiFirst(p, homeName).whenComplete((ok, err) ->
                 Bukkit.getScheduler().runTask(plugin, () -> open(p, returnPage))
         );
@@ -1034,6 +1136,7 @@ public final class HomesMenu implements Listener {
         }
 
         Map<String, String> ph = new HashMap<>();
+        ph.put("%player%", p.getName());
         ph.put("%home%", String.valueOf(homeNumber));
         ph.put("%home_name%", actualHomeName == null ? "" : actualHomeName);
 
@@ -1056,7 +1159,9 @@ public final class HomesMenu implements Listener {
         Inventory top = e.getView().getTopInventory();
         InventoryHolder rawHolder = top.getHolder();
 
+        // -------------------------
         // Delete confirm clicks
+        // -------------------------
         if (rawHolder instanceof DeleteConfirmHolder dch) {
             e.setCancelled(true);
 
@@ -1065,9 +1170,27 @@ public final class HomesMenu implements Listener {
 
             if (!beginAction(p.getUniqueId())) return;
 
+            // placeholders for delete confirm actions
+            Map<String, String> ph = new HashMap<>();
+            ph.put("%player%", p.getName());
+            ph.put("%home%", String.valueOf(dch.homeNumber()));
+            ph.put("%home_name%", dch.actualHomeName() == null ? "" : dch.actualHomeName());
+
             if (slot == dch.cancelSlot()) {
-                try { open(p, dch.returnPage()); }
-                finally { endAction(p.getUniqueId()); }
+                try {
+                    // ✅ player + console commands for cancel
+                    runClickCommandsFromPaths(
+                            p, ph,
+                            // your config shape: menus.homes.delete_confirm.items.cancel.click.*
+                            "menus.homes.delete_confirm.items.cancel.click",
+                            "menus.homes.delete_confirm.items.cancel"
+                    );
+
+                    // return
+                    open(p, dch.returnPage());
+                } finally {
+                    endAction(p.getUniqueId());
+                }
                 return;
             }
 
@@ -1078,10 +1201,21 @@ public final class HomesMenu implements Listener {
                 } catch (Throwable ignored) {}
 
                 final String deleteName = dch.actualHomeName();
+
+                // ✅ run configured commands on confirm
+                runClickCommandsFromPaths(
+                        p, ph,
+                        "menus.homes.delete_confirm.items.confirm.click",
+                        "menus.homes.delete_confirm.items.confirm"
+                );
+
                 doDeleteHomeApiFirst(p, deleteName).whenComplete((ok, err) ->
                         Bukkit.getScheduler().runTask(plugin, () -> {
-                            try { open(p, dch.returnPage()); }
-                            finally { endAction(p.getUniqueId()); }
+                            try {
+                                open(p, dch.returnPage());
+                            } finally {
+                                endAction(p.getUniqueId());
+                            }
                         })
                 );
                 return;
@@ -1091,7 +1225,9 @@ public final class HomesMenu implements Listener {
             return;
         }
 
+        // -------------------------
         // Homes menu clicks
+        // -------------------------
         if (!(rawHolder instanceof HomesHolder holder)) return;
 
         e.setCancelled(true);
@@ -1099,18 +1235,62 @@ public final class HomesMenu implements Listener {
         int slot = e.getRawSlot();
         if (slot < 0 || slot >= top.getSize()) return;
 
+        // ✅ IMPORTANT: build nav placeholders ONCE and actually pass player name
+        int maxHomesNow = Math.max(1, holder.maxHomes());
+        int pagesNow = Math.max(1, (int) Math.ceil(maxHomesNow / (double) holder.perPage()));
+        Map<String, String> navPh = new HashMap<>();
+        navPh.put("%player%", p.getName());
+        navPh.put("%page%", String.valueOf(holder.page() + 1));
+        navPh.put("%pages%", String.valueOf(pagesNow));
+        navPh.put("%max_homes%", String.valueOf(maxHomesNow));
+        navPh.put("%prev_page%", String.valueOf(Math.max(1, holder.page())));
+        navPh.put("%next_page%", String.valueOf(Math.min(pagesNow, holder.page() + 2)));
+
         // Nav
         if (holder.navEnabled()) {
             if (slot == clamp(holder.navCloseSlot(), 0, top.getSize() - 1)) {
-                p.closeInventory();
+                // ✅ FIX: use the actual config paths you have:
+                // menus.homes.navigation.close_item.click.player_commands / console_commands
+                runClickCommandsFromPaths(
+                        p, navPh,
+                        "menus.homes.navigation.close_item.click",
+                        "menus.homes.navigation.close_item"
+                );
+
+                boolean close = plugin.getConfig().getBoolean("menus.homes.navigation.close_item.click.close_menu", true);
+                if (close) p.closeInventory();
                 return;
             }
+
             if (slot == clamp(holder.navPrevSlot(), 0, top.getSize() - 1) && top.getItem(slot) != null) {
+                runClickCommandsFromPaths(
+                        p, navPh,
+                        "menus.homes.navigation.prev_item.click",
+                        "menus.homes.navigation.prev_item"
+                );
+
                 open(p, Math.max(0, holder.page() - 1));
                 return;
             }
+
             if (slot == clamp(holder.navNextSlot(), 0, top.getSize() - 1) && top.getItem(slot) != null) {
+                runClickCommandsFromPaths(
+                        p, navPh,
+                        "menus.homes.navigation.next_item.click",
+                        "menus.homes.navigation.next_item"
+                );
+
                 open(p, holder.page() + 1);
+                return;
+            }
+
+            if (slot == clamp(holder.navPageSlot(), 0, top.getSize() - 1) && top.getItem(slot) != null) {
+                // optional: allow page_item clicks too
+                runClickCommandsFromPaths(
+                        p, navPh,
+                        "menus.homes.navigation.page_item.click",
+                        "menus.homes.navigation.page_item"
+                );
                 return;
             }
         }
@@ -1133,13 +1313,34 @@ public final class HomesMenu implements Listener {
         ItemStack clicked = top.getItem(slot);
         if (clicked == null || clicked.getType() == Material.AIR) return;
 
+        // Build action placeholders
+        Map<String, String> ph = new HashMap<>();
+        ph.put("%player%", p.getName());
+        ph.put("%home%", String.valueOf(homeNumber));
+        ph.put("%home_name%", exists ? actualName : "");
+        ph.put("%page%", String.valueOf(holder.page() + 1));
+        ph.put("%pages%", String.valueOf(pagesNow));
+        ph.put("%max_homes%", String.valueOf(maxHomesNow));
+        ph.put("%prev_page%", String.valueOf(Math.max(1, holder.page())));
+        ph.put("%next_page%", String.valueOf(Math.min(pagesNow, holder.page() + 2)));
+
         if (ref.kind == HomeSlotKind.TELEPORT) {
             Material expectedSavedBed = safeMaterial(config.homesTeleportItem().material(), Material.BLUE_BED);
             if (!exists) return;
             if (clicked.getType() != expectedSavedBed) return;
 
+            // ✅ FIX: use your config path shape:
+            // menus.homes.home_items.teleport.click.*
+            runClickCommandsFromPaths(
+                    p, ph,
+                    "menus.homes.home_items.teleport.click",
+                    "menus.homes.home_items.teleport"
+            );
+
             try { Bukkit.dispatchCommand(p, "huskhomes:home " + actualName); } catch (Throwable ignored) {}
-            p.closeInventory();
+
+            boolean close = plugin.getConfig().getBoolean("menus.homes.home_items.teleport.click.close_menu", true);
+            if (close) p.closeInventory();
             return;
         }
 
@@ -1161,7 +1362,17 @@ public final class HomesMenu implements Listener {
 
             if (clicked.getType() == createMat) {
                 int returnPage = holder.page();
-                p.closeInventory();
+
+                // ✅ FIX: your config shape for empty_action is:
+                // menus.homes.home_items.empty_action.click.*
+                runClickCommandsFromPaths(
+                        p, ph,
+                        "menus.homes.home_items.empty_action.click",
+                        "menus.homes.home_items.empty_action"
+                );
+
+                boolean close = plugin.getConfig().getBoolean("menus.homes.home_items.empty_action.click.close_menu", true);
+                if (close) p.closeInventory();
 
                 Bukkit.getScheduler().runTask(plugin, () -> {
                     try {
@@ -1178,6 +1389,14 @@ public final class HomesMenu implements Listener {
                     endAction(p.getUniqueId());
                     return;
                 }
+
+                // ✅ FIX: delete_action is:
+                // menus.homes.home_items.delete_action.click.*
+                runClickCommandsFromPaths(
+                        p, ph,
+                        "menus.homes.home_items.delete_action.click",
+                        "menus.homes.home_items.delete_action"
+                );
 
                 if (deleteConfirmEnabled()) {
                     try { openDeleteConfirm(p, holder.page(), homeNumber, actualName); }
@@ -1437,7 +1656,6 @@ public final class HomesMenu implements Listener {
 
         int lines = 0;
         for (int line = 0; line < 100; line++) {
-            // when checking fit, assume a full line (offset=0)
             int bedSlot = slotForTeleport(l, line, 0, l.columns);
             int actionSlot = slotForAction(l, line, 0, l.columns);
 
@@ -1493,17 +1711,14 @@ public final class HomesMenu implements Listener {
     // ---------------------------------------------------------------------
     // ✅ Max homes logic (FIXED per your request)
     // ---------------------------------------------------------------------
-    // Goal:
-    // 1) If the player has huskhomes.max_homes.<#>, use that number (beds shown).
-    // 2) ONLY if they do NOT have any huskhomes.max_homes.<#>, fall back to HuskHomes config general.max_homes.
     private int getMaxHomes(Player p) {
         int permMax = readMaxHomesFromPermissions(p);
         if (permMax > 0) {
-            return permMax; // ✅ permission decides menu size
+            return permMax;
         }
 
         int cfgMax = readHuskHomesMaxHomesFromConfig();
-        return Math.max(1, cfgMax); // ✅ fallback only if no perm
+        return Math.max(1, cfgMax);
     }
 
     private int readHuskHomesMaxHomesFromConfig() {
@@ -1532,8 +1747,6 @@ public final class HomesMenu implements Listener {
             if (!lower.startsWith("huskhomes.max_homes.")) continue;
 
             String tail = lower.substring("huskhomes.max_homes.".length());
-
-            // Ignore wildcard (huskhomes.max_homes.*) since it doesn't specify a number
             if (tail.equals("*")) continue;
 
             try {
