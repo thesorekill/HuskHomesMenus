@@ -25,7 +25,6 @@ import java.util.UUID;
 
 public final class TeleportRequestToggleListener implements Listener {
 
-    private final HuskHomesMenus plugin;
     private final ToggleManager toggles;
     private final OptionalProxyMessenger messenger;
     private final HHMConfig config;
@@ -33,8 +32,7 @@ public final class TeleportRequestToggleListener implements Listener {
 
     private static final LegacyComponentSerializer AMP = LegacyComponentSerializer.legacyAmpersand();
 
-    public TeleportRequestToggleListener(HuskHomesMenus plugin, ToggleManager toggles, OptionalProxyMessenger messenger, HHMConfig config) {
-        this.plugin = plugin;
+    public TeleportRequestToggleListener(ToggleManager toggles, OptionalProxyMessenger messenger, HHMConfig config) {
         this.toggles = toggles;
         this.messenger = messenger;
         this.config = config;
@@ -45,6 +43,9 @@ public final class TeleportRequestToggleListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onReceive(ReceiveTeleportRequestEvent event) {
+        // This event may be fired off-region/off-thread on Folia depending on upstream.
+        // We do minimal extraction here, then schedule any Bukkit/Player operations via Sched.
+
         final Player target = resolveTargetPlayer(event);
         if (target == null) {
             if (debug) Bukkit.getLogger().info("target == null; cannot enforce toggle");
@@ -53,55 +54,56 @@ public final class TeleportRequestToggleListener implements Listener {
 
         final ReqType type = resolveRequestType(event);
 
-        final boolean tpaOn = toggles.isTpaOn(target);
-        final boolean tpahereOn = toggles.isTpahereOn(target);
+        final boolean tpaOn = safe(() -> toggles.isTpaOn(target), true);
+        final boolean tpahereOn = safe(() -> toggles.isTpahereOn(target), true);
 
         final boolean allowed = (type == ReqType.TPA) ? tpaOn : tpahereOn;
         if (allowed) {
-            String requesterName = resolveRequesterName(event);
-            ConfirmRequestMenu.RequestType rt = (type == ReqType.TPA)
+            final String requesterName = resolveRequesterName(event);
+            final UUID requesterUuid = resolveRequesterUuid(event);
+
+            final ConfirmRequestMenu.RequestType rt = (type == ReqType.TPA)
                     ? ConfirmRequestMenu.RequestType.TPA
                     : ConfirmRequestMenu.RequestType.TPAHERE;
 
-            UUID requesterUuid = resolveRequesterUuid(event);
-
+            // PendingRequests is thread-safe (ConcurrentHashMap), ok to touch here
             if (requesterName != null && !requesterName.isBlank()) {
                 PendingRequests.set(target.getUniqueId(), requesterName, requesterUuid, rt);
             }
 
-            // ✅ SKIN HANDSHAKE: if requester is remote, ask their backend for textures and store for our menu head
+            // SKIN handshake (proxy): only depends on names/uuids; ok to do here
             if (config.proxyEnabled()
                     && messenger != null
                     && messenger.isEnabled()
                     && requesterName != null
-                    && !requesterName.isBlank()
-                    && target.isOnline()) {
+                    && !requesterName.isBlank()) {
 
+                // If requester is not local on this backend, ask their backend for textures
                 Player requesterLocal = resolveRequesterPlayer(event);
                 boolean requesterIsLocal = (requesterLocal != null);
 
                 if (!requesterIsLocal) {
                     long reqId = (System.nanoTime() ^ (System.currentTimeMillis() << 1)) & Long.MAX_VALUE;
                     boolean ok = messenger.requestSkinByName(requesterName, target.getName(), target.getUniqueId(), reqId);
-
                     if (debug) Bukkit.getLogger().info("requestSkinByName(" + requesterName + " -> " + target.getName() + ") ok=" + ok);
                 }
             }
 
-            // ✅ TPAUTO: auto-accept incoming /tpa (NO MENU)
-            if (type == ReqType.TPA && toggles.isTpAutoOn(target)) {
+            // TPAUTO: auto-accept incoming /tpa (NO MENU)
+            if (type == ReqType.TPA && safe(() -> toggles.isTpAutoOn(target), false)) {
                 if (requesterName != null && !requesterName.isBlank()) {
                     final String requesterFinal = requesterName;
 
                     // prevent menu intercept loops
                     PendingRequests.bypassForMs(target.getUniqueId(), 1200);
 
-                    Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    // Folia-safe: dispatchCommand must be scheduled on the target's scheduler
+                    Sched.later(target, 1L, () -> {
                         try {
                             Bukkit.dispatchCommand(target, "huskhomes:tpaccept " + requesterFinal);
                         } catch (Throwable ignored) { }
                         PendingRequests.remove(target.getUniqueId(), requesterFinal);
-                    }, 1L);
+                    });
 
                     if (debug) Bukkit.getLogger().info("tpauto ON for " + target.getName() + "; auto-accepted TPA from " + requesterFinal);
                 } else {
@@ -110,28 +112,33 @@ public final class TeleportRequestToggleListener implements Listener {
                 return; // always skip menu when tpauto is ON
             }
 
-            // ✅ TPMENU TOGGLE: if target disabled the GUI menu, do nothing (HuskHomes handles normally)
-            if (!toggles.isTpMenuOn(target)) {
+            // TPMENU toggle: if target disabled the GUI menu, do nothing (HuskHomes handles normally)
+            if (!safe(() -> toggles.isTpMenuOn(target), true)) {
                 if (debug) Bukkit.getLogger().info("tpmenu is OFF for " + target.getName() + "; skipping menu");
                 return;
             }
 
+            // Allowed, menu enabled: do nothing here. Your /tpaccept intercept will open menu when player runs it,
+            // and/or your ConfirmRequestMenu listener handles it when appropriate.
             return;
         }
 
+        // Denied
         event.setCancelled(true);
 
+        // Notify TARGET (must be scheduled for Folia safety)
         if (config.isEnabled("messages.target.blocked_notice.enabled", false)) {
-            String requesterName = resolveRequesterName(event);
-            if (requesterName == null || requesterName.isBlank()) requesterName = "someone";
-            String notice = config.msgWithPrefix("messages.target.blocked_notice.text",
-                    "&7You blocked a teleport request from &f%sender%&7.")
-                    .replace("%sender%", requesterName);
+            String rn = resolveRequesterName(event);
+            if (rn == null || rn.isBlank()) rn = "someone";
 
-            // ✅ send colored text via Adventure
-            target.sendMessage(AMP.deserialize(notice));
+            final String notice = config.msgWithPrefix("messages.target.blocked_notice.text",
+                    "&7You blocked a teleport request from &f%sender%&7.")
+                    .replace("%sender%", rn);
+
+            Sched.run(target, () -> target.sendMessage(AMP.deserialize(notice)));
         }
 
+        // Build sender message (string with legacy & codes; proxy will convert to §)
         String msg = null;
         if (!tpaOn && !tpahereOn) {
             if (config.isEnabled("messages.sender.both_off.enabled", true)) {
@@ -149,30 +156,28 @@ public final class TeleportRequestToggleListener implements Listener {
                         "&cThat player has &lTPAHere&r &crequests off.");
             }
         }
-
         if (msg == null) msg = "";
 
+        // If requester is local, message them directly (schedule on requester)
         final Player requester = resolveRequesterPlayer(event);
         if (requester != null) {
-            if (!msg.isEmpty()) requester.sendMessage(AMP.deserialize(msg));
+            final String msgFinal = msg;
+            if (!msgFinal.isEmpty()) {
+                Sched.run(requester, () -> requester.sendMessage(AMP.deserialize(msgFinal)));
+            }
             if (debug) Bukkit.getLogger().info("Sent local denial to " + requester.getName());
             return;
         }
 
+        // Cross-server denial via proxy
         if (messenger == null || !messenger.isEnabled()) {
             if (debug) Bukkit.getLogger().info("messenger disabled; cannot send cross-server denial");
             return;
         }
 
-        Player carrier = anyOnlinePlayer();
-        if (carrier == null) {
-            if (debug) Bukkit.getLogger().info("No carrier player online; cannot send plugin message");
-            return;
-        }
-
         final String requesterName = resolveRequesterName(event);
         if (requesterName != null && !requesterName.isBlank() && !msg.isEmpty()) {
-            boolean ok = messenger.messagePlayer(requesterName, msg); // keep as String for proxy transport
+            boolean ok = messenger.messagePlayer(requesterName, msg);
             if (debug) Bukkit.getLogger().info("messenger.messagePlayer -> " + ok);
             if (ok) return;
         } else {
@@ -181,7 +186,7 @@ public final class TeleportRequestToggleListener implements Listener {
 
         final UUID requesterUuid = resolveRequesterUuid(event);
         if (requesterUuid != null && !msg.isEmpty()) {
-            boolean ok = tryForwardToIfPresent(messenger, requesterUuid, msg); // keep as String for proxy transport
+            boolean ok = tryForwardToIfPresent(messenger, requesterUuid, msg);
             if (debug) Bukkit.getLogger().info("messenger.forwardTo (reflective) -> " + ok);
         } else {
             if (debug) Bukkit.getLogger().info("requesterUuid unresolved; cannot forward denial");
@@ -197,11 +202,6 @@ public final class TeleportRequestToggleListener implements Listener {
         } catch (Throwable ignored) {
             return false;
         }
-    }
-
-    private Player anyOnlinePlayer() {
-        for (Player p : Bukkit.getOnlinePlayers()) return p;
-        return null;
     }
 
     private ReqType resolveRequestType(ReceiveTeleportRequestEvent event) {
@@ -283,5 +283,11 @@ public final class TeleportRequestToggleListener implements Listener {
             } catch (Throwable ignored) { }
         }
         return null;
+    }
+
+    private interface ThrowingSupplier<T> { T get() throws Exception; }
+
+    private static <T> T safe(ThrowingSupplier<T> s, T def) {
+        try { return s.get(); } catch (Throwable ignored) { return def; }
     }
 }

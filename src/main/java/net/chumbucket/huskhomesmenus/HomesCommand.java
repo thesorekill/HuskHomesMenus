@@ -17,6 +17,15 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
+/**
+ * /homes and /home command bridge:
+ * - If args are provided, forwards to HuskHomes (so /home <name> works)
+ * - If no args:
+ *   - If toggle is OFF => forwards to HuskHomes base command
+ *   - If toggle is ON  => opens HomesMenu GUI (permission gated)
+ *
+ * Folia-safe: all Bukkit interactions are scheduled via Sched.
+ */
 public final class HomesCommand implements CommandExecutor {
 
     private final HomesMenu homesMenu;
@@ -53,16 +62,21 @@ public final class HomesCommand implements CommandExecutor {
 
             final String forward = sb.length() > 0 ? (base + " " + sb) : base;
 
-            boolean ok;
-            try {
-                ok = Bukkit.dispatchCommand(sender, forward);
-            } catch (Throwable t) {
-                ok = false;
-            }
+            // ✅ Folia-safe: dispatch command on the player's correct scheduler
+            Sched.run(p, () -> {
+                boolean ok;
+                try {
+                    ok = Bukkit.dispatchCommand(p, forward);
+                } catch (Throwable t) {
+                    ok = false;
+                }
 
-            if (!ok) {
-                p.sendMessage(AMP.deserialize(config.prefix() + "&cFailed to run HuskHomes /" + (isHomes ? "homes" : "home") + "."));
-            }
+                if (!ok && p.isOnline()) {
+                    p.sendMessage(AMP.deserialize(config.prefix())
+                            .append(AMP.deserialize("&cFailed to run HuskHomes /" + (isHomes ? "homes" : "home") + ".")));
+                }
+            });
+
             return true;
         }
 
@@ -77,26 +91,31 @@ public final class HomesCommand implements CommandExecutor {
         }
 
         if (!menuOn) {
-            boolean ok;
-            try {
-                ok = Bukkit.dispatchCommand(sender, base);
-            } catch (Throwable t) {
-                ok = false;
-            }
+            Sched.run(p, () -> {
+                boolean ok;
+                try {
+                    ok = Bukkit.dispatchCommand(p, base);
+                } catch (Throwable t) {
+                    ok = false;
+                }
 
-            if (!ok) {
-                p.sendMessage(AMP.deserialize(config.prefix() + "&cFailed to run HuskHomes /" + (isHomes ? "homes" : "home") + "."));
-            }
+                if (!ok && p.isOnline()) {
+                    p.sendMessage(AMP.deserialize(config.prefix())
+                            .append(AMP.deserialize("&cFailed to run HuskHomes /" + (isHomes ? "homes" : "home") + ".")));
+                }
+            });
             return true;
         }
 
         // GUI path (permission-gated)
         if (!p.hasPermission("huskhomesmenus.home")) {
-            p.sendMessage(AMP.deserialize(config.prefix() + "&cYou don’t have permission."));
+            p.sendMessage(AMP.deserialize(config.prefix())
+                    .append(AMP.deserialize("&cYou don’t have permission.")));
             return true;
         }
 
-        homesMenu.open(p, 0);
+        // ✅ Folia-safe: opening inventories should be on the player's scheduler
+        Sched.run(p, () -> homesMenu.open(p, 0));
         return true;
     }
 }

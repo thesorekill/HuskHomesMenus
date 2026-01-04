@@ -38,7 +38,7 @@ public final class HHMConfig {
     private static final LegacyComponentSerializer AMP = LegacyComponentSerializer.legacyAmpersand();
 
     public HHMConfig(JavaPlugin plugin) {
-        this.plugin = plugin;
+        this.plugin = Objects.requireNonNull(plugin, "plugin");
     }
 
     public boolean debug() {
@@ -46,12 +46,12 @@ public final class HHMConfig {
     }
 
     public boolean proxyEnabled() {
-        // ✅ default false to match your config.yml
+        // default false to match your config.yml
         return plugin.getConfig().getBoolean("proxy.enabled", false);
     }
 
     public String backendName() {
-        return plugin.getConfig().getString("backend_name", "Loading...");
+        return plugin.getConfig().getString("backend_name", "backend");
     }
 
     /**
@@ -63,9 +63,10 @@ public final class HHMConfig {
 
     /**
      * Prefix as a Component (preferred for sendMessage(Component)).
+     * Honors italics only if the config explicitly sets it using &o/§o.
      */
     public Component prefixComponent() {
-        return AMP.deserialize(plugin.getConfig().getString("messages.prefix", ""));
+        return legacyToComponentNoItalic(plugin.getConfig().getString("messages.prefix", ""));
     }
 
     public boolean isEnabled(String enabledPath, boolean def) {
@@ -85,10 +86,11 @@ public final class HHMConfig {
 
     /**
      * Message with prefix as a Component (preferred for sendMessage(Component)).
+     * Honors italics only if the config explicitly sets it using &o/§o.
      */
     public Component msgWithPrefixComponent(String path, String def) {
         Component pfx = prefixComponent();
-        Component msg = AMP.deserialize(plugin.getConfig().getString(path, def));
+        Component msg = legacyToComponentNoItalic(plugin.getConfig().getString(path, def));
         return pfx.append(msg);
     }
 
@@ -102,10 +104,10 @@ public final class HHMConfig {
 
     /**
      * Converts legacy &-colored text into a Component.
+     * Honors italics only if explicitly requested using &o/§o.
      */
     public Component colorComponent(String s) {
-        if (s == null) return Component.empty();
-        return AMP.deserialize(s);
+        return legacyToComponentNoItalic(s);
     }
 
     public ConfigurationSection section(String path) {
@@ -237,7 +239,7 @@ public final class HHMConfig {
     }
 
     // ---------------------------------------------------------------------
-    // ✅ Warps menu config helpers (ADDED)
+    // Warps menu config helpers
     // ---------------------------------------------------------------------
 
     public boolean warpsMenuEnabled() {
@@ -265,11 +267,9 @@ public final class HHMConfig {
     }
 
     public List<Integer> warpsItemSlots(int rows) {
-        // rows provided for symmetry with homes; slot list is independent
         List<Integer> slots = plugin.getConfig().getIntegerList("menus.warps.layout.item_slots");
         if (slots == null) return Collections.emptyList();
 
-        // sanitize: keep only valid slots for this inventory size
         int size = Math.max(1, Math.min(6, rows)) * 9;
         List<Integer> out = new ArrayList<>();
         for (Integer s : slots) {
@@ -370,21 +370,17 @@ public final class HHMConfig {
     }
 
     // ---------------------------------------------------------------------
-    // ✅ NO-ITALICS FIX
+    // Item building (no-italics by default, unless explicitly requested)
     // ---------------------------------------------------------------------
 
-    private Component deitalicize(Component c) {
-        if (c == null) return Component.empty();
+    private Component legacyToComponentNoItalic(String legacy) {
+        String raw = legacy == null ? "" : legacy;
 
-        Component out = c.decoration(TextDecoration.ITALIC, false);
+        // If they explicitly asked for italics in config, don't override it
+        boolean wantsItalic = raw.contains("&o") || raw.contains("§o");
 
-        if (!out.children().isEmpty()) {
-            List<Component> kids = new ArrayList<>(out.children().size());
-            for (Component child : out.children()) kids.add(deitalicize(child));
-            out = out.children(kids);
-        }
-
-        return out;
+        Component c = AMP.deserialize(raw);
+        return wantsItalic ? c : c.decoration(TextDecoration.ITALIC, false);
     }
 
     /**
@@ -403,7 +399,7 @@ public final class HHMConfig {
         final String name = applyPlaceholders(t.name(), placeholders);
         final String safeName = (name == null || name.isBlank()) ? " " : name;
 
-        meta.displayName(deitalicize(AMP.deserialize(safeName)));
+        meta.displayName(legacyToComponentNoItalic(safeName));
 
         final List<String> rawLore = (t.lore() == null) ? Collections.emptyList() : t.lore();
         if (!rawLore.isEmpty()) {
@@ -411,10 +407,10 @@ public final class HHMConfig {
             for (String line : rawLore) {
                 String applied = applyPlaceholders(line, placeholders);
                 if (applied != null && !applied.isBlank()) {
-                    loreComponents.add(deitalicize(AMP.deserialize(applied)));
+                    loreComponents.add(legacyToComponentNoItalic(applied));
                 }
             }
-            if (!loreComponents.isEmpty()) meta.lore(loreComponents);
+            meta.lore(loreComponents.isEmpty() ? null : loreComponents);
         }
 
         if (t.customModelData() > 0) {

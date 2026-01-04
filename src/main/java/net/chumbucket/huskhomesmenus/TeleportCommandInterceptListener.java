@@ -10,6 +10,7 @@
 
 package net.chumbucket.huskhomesmenus;
 
+import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -17,7 +18,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 
-import net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer;
+import java.util.Locale;
 
 public final class TeleportCommandInterceptListener implements Listener {
 
@@ -35,41 +36,50 @@ public final class TeleportCommandInterceptListener implements Listener {
 
     @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = false)
     public void onCommand(PlayerCommandPreprocessEvent e) {
-        Player p = e.getPlayer();
+        final Player p = e.getPlayer();
+        if (p == null) return;
 
+        // If we're bypassing, don't intercept
         if (PendingRequests.isBypassActive(p.getUniqueId())) return;
+
+        // If menu feature disabled, do nothing
         if (!isConfirmMenuEnabled()) return;
 
-        // if player disabled menu, DO NOT intercept /tpaccept or /tpdeny
-        if (toggles != null && !toggles.isTpMenuOn(p)) return;
+        // If player disabled TP menu, do not intercept /tpaccept or /tpdeny
+        if (toggles != null && !toglesTpMenuOnSafe(p)) return;
 
-        String msg = e.getMessage();
+        final String msg = e.getMessage();
         if (msg == null) return;
 
-        String trimmed = msg.trim();
-        if (trimmed.isBlank() || !trimmed.startsWith("/")) return;
+        final String trimmed = msg.trim();
+        if (trimmed.isEmpty() || !trimmed.startsWith("/")) return;
 
-        String[] parts = trimmed.split("\\s+");
+        final String[] parts = trimmed.split("\\s+");
         if (parts.length == 0) return;
 
-        String first = parts[0].substring(1);
+        String first = parts[0];
+        if (first.length() < 2) return; // "/"
+        first = first.substring(1);     // remove leading "/"
         if (first.isBlank()) return;
 
+        // Strip namespace (e.g. "huskhomes:tpaccept")
         String label = first;
         if (label.contains(":")) label = label.split(":", 2)[1];
 
-        String action = label.toLowerCase();
+        String action = label.toLowerCase(Locale.ROOT);
         int argIndex = 1;
 
+        // Support "/huskhomes tpaccept" and "/hh tpaccept"
         if (action.equals("huskhomes") || action.equals("hh")) {
             if (parts.length < 2) return;
-            action = parts[1].toLowerCase();
+            action = safeLower(parts[1]);
             argIndex = 2;
         }
 
         boolean isAccept = action.equals("tpaccept");
         boolean isDeny = action.equals("tpdeny") || action.equals("tpdecline");
 
+        // Handle things like "/tpaccept:foo" or "/tpdeny:bar" etc.
         if (!isAccept && !isDeny) {
             if (action.startsWith("tpaccept")) isAccept = true;
             if (action.startsWith("tpdeny") || action.startsWith("tpdecline")) isDeny = true;
@@ -77,42 +87,67 @@ public final class TeleportCommandInterceptListener implements Listener {
 
         if (!isAccept && !isDeny) return;
 
+        // We're handling it (GUI), cancel the command
         e.setCancelled(true);
 
+        // Determine requester name (may be null)
         String requesterName = (parts.length > argIndex) ? parts[argIndex] : null;
+        if (requesterName != null) requesterName = requesterName.trim();
 
+        // If no arg provided, fall back to "last pending"
         if (requesterName == null || requesterName.isBlank()) {
             PendingRequests.Pending pending = PendingRequests.get(p.getUniqueId());
             if (pending == null) {
-                // ✅ no ChatColor; use Adventure + legacy & codes
-                p.sendMessage(
+                // Folia-safe: run message on player's scheduler where possible
+                Sched.run(p, () -> p.sendMessage(
                         AMP.deserialize(config.prefix())
                                 .append(AMP.deserialize("&cYou have no pending teleport requests."))
-                );
+                ));
                 return;
             }
             requesterName = pending.senderName();
         }
 
+        // Resolve request type from pending map
         ConfirmRequestMenu.RequestType type = ConfirmRequestMenu.RequestType.TPA;
 
         PendingRequests.Pending byName = PendingRequests.get(p.getUniqueId(), requesterName);
         if (byName != null && byName.type() != null) {
             type = byName.type();
-            requesterName = byName.senderName();
+            requesterName = byName.senderName(); // preserve correct casing
         } else {
             PendingRequests.Pending last = PendingRequests.get(p.getUniqueId());
-            if (last != null && last.type() != null) {
-                type = last.type();
-            }
+            if (last != null && last.type() != null) type = last.type();
         }
 
-        menu.open(p, requesterName, type);
+        final String finalRequester = requesterName;
+        final ConfirmRequestMenu.RequestType finalType = type;
+
+        // Folia-safe: menu open should run on correct scheduler
+        Sched.run(p, () -> menu.open(p, finalRequester, finalType));
+    }
+
+    private boolean toglesTpMenuOnSafe(Player p) {
+        try {
+            return toggles.isTpMenuOn(p);
+        } catch (Throwable ignored) {
+            // safest behavior: don't intercept if we can't check
+            return false;
+        }
     }
 
     private boolean isConfirmMenuEnabled() {
-        ConfigurationSection sec = config.section("menus.confirm_request");
-        if (sec == null) return true;
-        return sec.getBoolean("enabled", true);
+        try {
+            ConfigurationSection sec = config.section("menus.confirm_request");
+            if (sec == null) return true;
+            return sec.getBoolean("enabled", true);
+        } catch (Throwable ignored) {
+            return true;
+        }
+    }
+
+    private static String safeLower(String s) {
+        if (s == null) return "";
+        return s.trim().toLowerCase(Locale.ROOT);
     }
 }

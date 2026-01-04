@@ -46,6 +46,11 @@ public final class HuskHomesMenus extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();
+
+        // ✅ Folia/Paper/Spigot/Purpur scheduling shim
+        // (safe no-op on non-Folia)
+        Sched.init(this);
+
         initRuntime();
         getLogger().info("HuskHomesMenus enabled. Proxy messenger enabled=" + (messenger != null && messenger.isEnabled()));
     }
@@ -59,6 +64,10 @@ public final class HuskHomesMenus extends JavaPlugin {
         try {
             teardownRuntime();
             reloadConfig();
+
+            // keep shim bound (in case someone calls reload before enable completes)
+            Sched.init(this);
+
             initRuntime();
 
             getLogger().info("HuskHomesMenus reloaded. Proxy messenger enabled=" + (messenger != null && messenger.isEnabled()));
@@ -109,7 +118,7 @@ public final class HuskHomesMenus extends JavaPlugin {
                 if (top == null) continue;
 
                 InventoryHolder holder = top.getHolder();
-                if (holder instanceof HomesMenu.HomesHolder) {
+                if (holder instanceof HomesMenu.HomesHolder || holder instanceof HomesMenu.DeleteConfirmHolder) {
                     try { p.closeInventory(); } catch (Throwable ignored) {}
                 }
             }
@@ -168,7 +177,8 @@ public final class HuskHomesMenus extends JavaPlugin {
         this.warpsInterceptListener = new WarpsCommandInterceptListener(warpsMenu, toggleManager, config);
         Bukkit.getPluginManager().registerEvents(warpsInterceptListener, this);
 
-        this.toggleListener = new TeleportRequestToggleListener(this, toggleManager, messenger, config);
+        // ✅ FIX: remove unused plugin reference from TeleportRequestToggleListener
+        this.toggleListener = new TeleportRequestToggleListener(toggleManager, messenger, config);
         Bukkit.getPluginManager().registerEvents(toggleListener, this);
 
         // Update checker
@@ -176,6 +186,7 @@ public final class HuskHomesMenus extends JavaPlugin {
             if (getConfig().getBoolean("update_checker.enabled", true)) {
                 this.updateChecker = new UpdateChecker(this, config, 130925);
 
+                // ✅ No Bukkit scheduling needed here — just logging (thread-safe)
                 if (getConfig().getBoolean("update_checker.notify_console", true)) {
                     this.updateChecker.checkNowAsync().thenAccept(result -> {
                         if (result == null) return;
@@ -244,8 +255,6 @@ public final class HuskHomesMenus extends JavaPlugin {
         safeSetTabCompleter("home", homesTab);
         safeSetTabCompleter("homes", homesTab);
 
-        // Optional: if you want warp tab completion, you can add a WarpsTabCompleter later
-
         // PlaceholderAPI
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             try {
@@ -256,6 +265,8 @@ public final class HuskHomesMenus extends JavaPlugin {
     }
 
     private void teardownRuntime() {
+        // ✅ Folia note:
+        // cancelTasks(JavaPlugin) exists on Folia builds too; if it ever throws, we just ignore.
         try { Bukkit.getScheduler().cancelTasks(this); } catch (Throwable ignored) { }
 
         try { if (confirmMenu != null) HandlerList.unregisterAll(confirmMenu); } catch (Throwable ignored) { }
@@ -270,6 +281,7 @@ public final class HuskHomesMenus extends JavaPlugin {
 
         try { if (updateNotifyOnJoinListener != null) HandlerList.unregisterAll(updateNotifyOnJoinListener); } catch (Throwable ignored) { }
 
+        // Close open inventories (best-effort)
         closeOpenConfirmMenus();
         closeOpenHomesMenus();
         closeOpenWarpsMenus();

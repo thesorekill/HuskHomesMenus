@@ -34,39 +34,44 @@ public final class ProxyTabCompleter implements TabCompleter {
         if (oneArgRequired) {
             if (args.length != 1) return List.of();
 
-            String prefix = args[0] == null ? "" : args[0].toLowerCase(Locale.ROOT);
-            String self = p.getName();
+            final String prefix = args[0] == null ? "" : args[0].toLowerCase(Locale.ROOT);
+            final String self = p.getName();
 
-            LinkedHashSet<String> out = new LinkedHashSet<>();
+            final LinkedHashSet<String> out = new LinkedHashSet<>();
 
             // local players first (nice UX)
             for (Player online : Bukkit.getOnlinePlayers()) {
+                if (online == null) continue;
                 String name = online.getName();
+                if (name == null) continue;
                 if (name.equalsIgnoreCase(self)) continue;
                 if (name.toLowerCase(Locale.ROOT).startsWith(prefix)) out.add(name);
             }
 
             // proxy cache (cross-backend)
-            for (String name : cache.getCached()) {
-                if (name == null) continue;
-                if (name.equalsIgnoreCase(self)) continue;
-                if (name.toLowerCase(Locale.ROOT).startsWith(prefix)) out.add(name);
+            if (cache != null) {
+                for (String name : cache.getCached()) {
+                    if (name == null) continue;
+                    if (name.equalsIgnoreCase(self)) continue;
+                    if (name.toLowerCase(Locale.ROOT).startsWith(prefix)) out.add(name);
+                }
             }
 
             return new ArrayList<>(out);
         }
 
         // /tpaccept [player] or /tpdeny [player]
+        // Bukkit provides args.length==1 even when user hasn't typed anything after space in some cases.
         if (args.length > 1) return List.of();
         if (args.length == 0) return List.of();
 
-        String prefix = (args[0] == null) ? "" : args[0].toLowerCase(Locale.ROOT);
-        String self = p.getName();
+        final String prefix = (args[0] == null) ? "" : args[0].toLowerCase(Locale.ROOT);
+        final String self = p.getName();
 
         List<String> senders = PendingRequests.getSenders(p.getUniqueId());
-        if (senders.isEmpty()) return List.of();
+        if (senders == null || senders.isEmpty()) return List.of();
 
-        LinkedHashSet<String> out = new LinkedHashSet<>();
+        final LinkedHashSet<String> out = new LinkedHashSet<>();
         for (String name : senders) {
             if (name == null) continue;
             if (name.equalsIgnoreCase(self)) continue;

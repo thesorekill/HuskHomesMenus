@@ -37,49 +37,66 @@ public final class TpaHereCommand implements CommandExecutor {
             return true;
         }
 
-        if (args.length != 1) {
+        // Folia-safe: run command logic on the correct scheduler for this player
+        Sched.run(player, () -> handle(player, args));
+        return true;
+    }
+
+    private void handle(Player player, String[] args) {
+        if (args == null || args.length != 1 || args[0] == null || args[0].isBlank()) {
             player.sendMessage(AMP.deserialize("&eUsage: /tpahere <player>"));
-            return true;
+            return;
         }
 
-        String targetName = args[0];
+        final String targetName = args[0].trim();
 
-        Player target = Bukkit.getPlayerExact(targetName);
+        Player target = null;
+        try {
+            target = Bukkit.getPlayerExact(targetName);
+        } catch (Throwable ignored) { }
+
         if (target != null) {
-            if (!toggles.isTpaOn(target) && !toggles.isTpahereOn(target)) {
+            boolean tpaOn = true;
+            boolean tpahereOn = true;
+
+            try { tpaOn = toggles.isTpaOn(target); } catch (Throwable ignored) { }
+            try { tpahereOn = toggles.isTpahereOn(target); } catch (Throwable ignored) { }
+
+            if (!tpaOn && !tpahereOn) {
                 if (config.isEnabled("messages.sender.both_off.enabled", true)) {
-                    player.sendMessage(
-                        AMP.deserialize(
+                    player.sendMessage(AMP.deserialize(
                             config.msgWithPrefix(
-                                "messages.sender.both_off.text",
-                                "&cThat player has teleport requests off."
+                                    "messages.sender.both_off.text",
+                                    "&cThat player has teleport requests off."
                             )
-                        )
-                    );
+                    ));
                 }
-                return true;
-            } else if (!toggles.isTpahereOn(target)) {
+                return;
+            } else if (!tpahereOn) {
                 if (config.isEnabled("messages.sender.tpahere_off.enabled", true)) {
-                    player.sendMessage(
-                        AMP.deserialize(
+                    player.sendMessage(AMP.deserialize(
                             config.msgWithPrefix(
-                                "messages.sender.tpahere_off.text",
-                                "&cThat player has &lTPAHere&r &crequests off."
+                                    "messages.sender.tpahere_off.text",
+                                    "&cThat player has &lTPAHere&r &crequests off."
                             )
-                        )
-                    );
+                    ));
                 }
-                return true;
+                return;
             }
         }
 
-        boolean handled = Bukkit.dispatchCommand(player, "huskhomes:tpahere " + targetName);
+        boolean handled;
+        try {
+            handled = Bukkit.dispatchCommand(player, "huskhomes:tpahere " + targetName);
+        } catch (Throwable t) {
+            handled = false;
+        }
+
         if (!handled) {
             player.sendMessage(
-                AMP.deserialize(config.prefix())
-                    .append(AMP.deserialize("&cFailed to run HuskHomes /tpahere."))
+                    AMP.deserialize(config.prefix())
+                            .append(AMP.deserialize("&cFailed to run HuskHomes /tpahere."))
             );
         }
-        return true;
     }
 }
